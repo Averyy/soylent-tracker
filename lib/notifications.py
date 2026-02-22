@@ -41,7 +41,7 @@ def _record_sms(phone: str, message: str) -> int:
     """Record a successful SMS send in persistent stats. Returns today's send count."""
     today = time.strftime("%Y-%m-%d", time.gmtime())
     # Redact OTP codes (e.g. "1234 is your Soylent Tracker code" → "is your Soylent Tracker code")
-    display_msg = re.sub(r'^\d{4,6}\s+', '', message)
+    display_msg = re.sub(r'^\d{4,6}\s+', '[code] ', message)
     with locked_json(SMS_STATS_FILE) as stats:
         stats["total"] = stats.get("total", 0) + 1
         daily = stats.setdefault("daily", {})

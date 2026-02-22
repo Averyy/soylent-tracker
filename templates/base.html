@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Soylent Stock Tracker{% endblock %}</title>
+  {% block head_extra %}{% endblock %}
+  <script>
+    (function() {
+      var t = localStorage.getItem('theme');
+      if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      }
+    })();
+  </script>
+  <link rel="icon" href="/static/favicon.ico" sizes="32x32 48x48" type="image/x-icon">
+  <link rel="icon" href="/static/favicon.png" sizes="170x170" type="image/png">
+  <link rel="stylesheet" href="/static/css/style.css?v={{ asset_hash('css/style.css') }}">
+  <script src="/static/js/vendor/htmx-2.0.4.min.js?v={{ asset_hash('js/vendor/htmx-2.0.4.min.js') }}" defer></script>
+  <script src="/static/js/vendor/alpine-3.14.8.min.js?v={{ asset_hash('js/vendor/alpine-3.14.8.min.js') }}" defer></script>
+</head>
+<body>
+  <svg id="wallpaper" class="wallpaper-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  <main class="{% block wrapper_class %}page{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="site-footer">
+    <div class="footer-content">
+      <div class="footer-top">
+        <span class="fw-500">&copy; Soylent Tracker</span>
+        <div class="footer-links">
+          <a href="https://github.com/soylent-tracker" target="_blank" rel="noopener"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg> GitHub</a>
+
+          <button onclick="toggleTheme(); this.setAttribute('aria-pressed', document.documentElement.classList.contains('dark'))" aria-label="Toggle dark mode" aria-pressed="false"><span class="theme-label-light"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg> Dark Mode</span><span class="theme-label-dark"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg> Light Mode</span></button>
+
+          <button onclick="var p=document.getElementById('wall-panel'); p.classList.toggle('open'); this.setAttribute('aria-expanded', p.classList.contains('open'))" aria-expanded="false" aria-controls="wall-panel"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Wallpaper</button>
+        </div>
+      </div>
+      <p>Not affiliated with, endorsed by, acknowledged by, noticed by, or even making eye contact with Soylent</p>
+    </div>
+  </footer>
+
+  <!-- Wallpaper floating panel -->
+  <div id="wall-panel" class="wall-panel" x-data="wallPanel()" x-init="init()">
+    <div class="wall-panel-header">
+      <span class="wall-panel-title">Wallpaper</span>
+      <button class="wall-panel-close" @click="close()" aria-label="Close wallpaper controls">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="wall-panel-body">
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Density</span>
+          <span class="wall-ctrl-val" x-text="spacing + 'px'"></span>
+        </div>
+        <input type="range" min="40" max="120" step="2" x-model.number="spacing"
+               @input="setVal('spacing', +$event.target.value)" aria-label="Density">
+      </div>
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Size Variation</span>
+          <span class="wall-ctrl-val" x-text="'\u00B1' + sizeVariation + '%'"></span>
+        </div>
+        <input type="range" min="0" max="50" step="5" x-model.number="sizeVariation"
+               @input="setVal('sizeVariation', +$event.target.value / 100)" aria-label="Size Variation">
+      </div>
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Rotation</span>
+          <span class="wall-ctrl-val" x-text="'\u00B1' + rotationRange + '\u00B0'"></span>
+        </div>
+        <input type="range" min="0" max="180" step="5" x-model.number="rotationRange"
+               @input="setVal('rotationRange', +$event.target.value)" aria-label="Rotation">
+      </div>
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Randomness</span>
+          <span class="wall-ctrl-val" x-text="randomness + '%'"></span>
+        </div>
+        <input type="range" min="0" max="100" step="5" x-model.number="randomness"
+               @input="setVal('randomness', +$event.target.value / 100)" aria-label="Randomness">
+      </div>
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Cycle Speed</span>
+          <span class="wall-ctrl-val" x-text="(cycleInterval / 1000).toFixed(1) + 's'"></span>
+        </div>
+        <input type="range" min="500" max="5000" step="100" x-model.number="cycleInterval"
+               @input="setVal('cycleInterval', +$event.target.value)" aria-label="Cycle Speed">
+      </div>
+      <div class="wall-ctrl">
+        <div class="wall-ctrl-label">
+          <span>Batch Size</span>
+          <span class="wall-ctrl-val" x-text="batchSize"></span>
+        </div>
+        <input type="range" min="1" max="30" x-model.number="batchSize"
+               @input="setVal('batchSize', +$event.target.value)" aria-label="Batch Size">
+      </div>
+      <button class="btn btn-ghost btn-sm full-width mt-xs" @click="reset()">Reset to Defaults</button>
+    </div>
+  </div>
+
+  <script src="/static/js/vendor/anime-4.3.6.umd.min.js?v={{ asset_hash('js/vendor/anime-4.3.6.umd.min.js') }}"></script>
+  <script src="/static/js/wallpaper.js?v={{ asset_hash('js/wallpaper.js') }}"></script>
+  <script>
+    function toggleTheme() {
+      var html = document.documentElement;
+      var isDark = html.classList.toggle('dark');
+      localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    }
+
+    function sanitizePhone(el) {
+      el.value = el.value.replace(/\D/g, '').slice(0, 10);
+    }
+
+    function _htmxResetElt(e) {
+      var elt = e.detail.elt;
+      if (elt) elt.classList.remove('htmx-request');
+    }
+    document.addEventListener('htmx:responseError', function(e) {
+      if (e.detail.xhr.status === 403) {
+        var redir = e.detail.xhr.getResponseHeader('HX-Redirect');
+        if (redir) window.location.href = redir;
+      }
+      _htmxResetElt(e);
+    });
+    document.addEventListener('htmx:sendError', _htmxResetElt);
+
+    var WALL_DEFAULTS = {
+      spacing: 60,
+      sizeVariation: 10,
+      rotationRange: 45,
+      randomness: 50,
+      cycleInterval: 1000,
+      batchSize: 5,
+    };
+    var WALL_STORAGE_KEY = 'wallpaper_settings';
+    var WALL_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+    function wallPanel() {
+      return {
+        spacing: WALL_DEFAULTS.spacing,
+        sizeVariation: WALL_DEFAULTS.sizeVariation,
+        rotationRange: WALL_DEFAULTS.rotationRange,
+        randomness: WALL_DEFAULTS.randomness,
+        cycleInterval: WALL_DEFAULTS.cycleInterval,
+        batchSize: WALL_DEFAULTS.batchSize,
+        _ctrl: null,
+
+        loadSettings: function() {
+          try {
+            var raw = localStorage.getItem(WALL_STORAGE_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            if (!data.savedAt || (Date.now() - data.savedAt) > WALL_MAX_AGE) {
+              localStorage.removeItem(WALL_STORAGE_KEY);
+              return null;
+            }
+            return data;
+          } catch (e) {
+            return null;
+          }
+        },
+
+        saveSettings: function() {
+          var data = {
+            spacing: this.spacing,
+            sizeVariation: this.sizeVariation,
+            rotationRange: this.rotationRange,
+            randomness: this.randomness,
+            cycleInterval: this.cycleInterval,
+            batchSize: this.batchSize,
+            savedAt: Date.now(),
+          };
+          localStorage.setItem(WALL_STORAGE_KEY, JSON.stringify(data));
+        },
+
+        init: function() {
+          var saved = this.loadSettings();
+          if (saved) {
+            this.spacing = saved.spacing;
+            this.sizeVariation = saved.sizeVariation;
+            this.rotationRange = saved.rotationRange;
+            this.randomness = saved.randomness;
+            this.cycleInterval = saved.cycleInterval;
+            this.batchSize = saved.batchSize;
+          }
+
+          var svg = document.getElementById('wallpaper');
+          if (typeof SoylentWallpaper === 'undefined') return;
+          this._ctrl = SoylentWallpaper.init(svg, {
+            spacing: this.spacing,
+            sizeVariation: this.sizeVariation / 100,
+            rotationRange: this.rotationRange,
+            cycleInterval: this.cycleInterval,
+            batchSize: this.batchSize,
+            randomness: this.randomness / 100,
+          });
+        },
+
+        setVal: function(key, val) {
+          if (this._ctrl) this._ctrl.set(key, val);
+          this.saveSettings();
+        },
+
+        reset: function() {
+          localStorage.removeItem(WALL_STORAGE_KEY);
+          this.spacing = WALL_DEFAULTS.spacing;
+          this.sizeVariation = WALL_DEFAULTS.sizeVariation;
+          this.rotationRange = WALL_DEFAULTS.rotationRange;
+          this.randomness = WALL_DEFAULTS.randomness;
+          this.cycleInterval = WALL_DEFAULTS.cycleInterval;
+          this.batchSize = WALL_DEFAULTS.batchSize;
+          if (this._ctrl) {
+            this._ctrl.set('spacing', this.spacing);
+            this._ctrl.set('sizeVariation', this.sizeVariation / 100);
+            this._ctrl.set('rotationRange', this.rotationRange);
+            this._ctrl.set('randomness', this.randomness / 100);
+            this._ctrl.set('cycleInterval', this.cycleInterval);
+            this._ctrl.set('batchSize', this.batchSize);
+          }
+        },
+
+        close: function() {
+          document.getElementById('wall-panel').classList.remove('open');
+        },
+      };
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

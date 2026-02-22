@@ -1,0 +1,29 @@
+<form method="POST" action="{{ action_url }}" id="otp-form">
+  {% if phone is defined %}<input type="hidden" name="phone" value="{{ phone }}">{% endif %}
+  <input type="hidden" name="code" id="otp-hidden">
+  <label for="otp-input">Verification Code</label>
+  <div class="otp-group{% if form_disabled|default(false) %} otp-disabled{% endif %}" id="otp-group">
+    {% if form_disabled|default(false) %}
+    <div class="otp-slot disabled" data-idx="0" aria-hidden="true"><span class="otp-dash"></span></div>
+    <div class="otp-slot disabled" data-idx="1" aria-hidden="true"><span class="otp-dash"></span></div>
+    <div class="otp-slot disabled" data-idx="2" aria-hidden="true"><span class="otp-dash"></span></div>
+    <div class="otp-slot disabled" data-idx="3" aria-hidden="true"><span class="otp-dash"></span></div>
+    <input type="text" class="otp-sr-input" id="otp-input" disabled>
+    {% else %}
+    <div class="otp-slot active" data-idx="0" aria-hidden="true"><span class="otp-char"></span><div class="otp-caret"></div></div>
+    <div class="otp-slot" data-idx="1" aria-hidden="true"><span class="otp-char"></span><div class="otp-caret"></div></div>
+    <div class="otp-slot" data-idx="2" aria-hidden="true"><span class="otp-char"></span><div class="otp-caret"></div></div>
+    <div class="otp-slot" data-idx="3" aria-hidden="true"><span class="otp-char"></span><div class="otp-caret"></div></div>
+    <input type="text" class="otp-sr-input" id="otp-input" inputmode="numeric"
+           autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}"
+           aria-label="4-digit verification code">
+    {% endif %}
+  </div>
+  <div class="spacer-md"></div>
+  <button type="submit" class="btn" id="otp-btn" disabled>Verify</button>
+</form>
+{% if error %}
+<div class="error-msg error-msg--bottom" role="alert">{{ error }}</div>
+{% else %}
+<p class="helper-text">Code expires in 5 minutes</p>
+{% endif %}

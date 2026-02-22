@@ -1,0 +1,11 @@
+<a href="{{ p.url }}" target="_blank" rel="noopener" class="card-row buy-card" aria-label="Buy {{ p.title }}">
+  <div class="buy-card-info">
+    <span class="buy-card-title">{{ p.title }}</span>
+    <div class="product-meta">
+      <span class="source-badge{{ ' amazon' if p.source == 'amazon-ca' else '' }}">{{ p.source_label }}</span>
+      {% if p.price %}<span class="product-price">{{ p.price }}</span>{% endif %}
+      {% if p.detail %}<span class="product-detail{{ ' low-stock' if p.low_stock else '' }}">{{ p.detail }}</span>{% endif %}
+    </div>
+  </div>
+  <span class="buy-card-action">Buy {% include "partials/icon_external.html" %}</span>
+</a>

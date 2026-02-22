@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Soylent Stock Tracker{% endblock %}
+{% block wrapper_class %}page-auth{% endblock %}
+
+{% block content %}
+<div class="auth-card rainbow-card">
+  {% include "partials/logo.html" %}
+  <h1>Sign In</h1>
+  <p class="subtitle">Enter your phone number to receive a verification code via <span class="imessage-green">Text Message</span></p>
+  <form method="POST" action="/send-code">
+    <label for="phone-input">Phone Number</label>
+    <div class="phone-field">
+      <span class="phone-prefix">+1</span>
+      <input type="tel" name="phone" id="phone-input" required maxlength="10" inputmode="numeric"
+             placeholder="555 123 4567" autocomplete="tel"
+             oninput="sanitizePhone(this)">
+    </div>
+    <div class="spacer-md"></div>
+    <button type="submit" class="btn">Send Code</button>
+  </form>
+  {% if error %}
+  <div class="error-msg error-msg--bottom" role="alert">{{ error }}</div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>setTimeout(function(){ document.getElementById('phone-input').focus(); }, 100);</script>
+{% endblock %}

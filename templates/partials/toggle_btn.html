@@ -1,0 +1,26 @@
+<button
+  class="check-btn {{ 'checked' if subscribed else '' }}"
+  aria-label="{{ 'Unsubscribe' if subscribed else 'Subscribe' }}"
+  title="{{ 'Unsubscribe' if subscribed else 'Subscribe' }}"
+  hx-post="/subscribe"
+  hx-vals='{"product_key": {{ product_key | tojson }}, "csrf_token": {{ csrf_token | tojson }}}'
+  hx-target="#toggle-{{ product_key | replace(':', '-') }}"
+  hx-swap="innerHTML"
+  hx-indicator="#toggle-{{ product_key | replace(':', '-') }}"
+><svg class="check-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 9 17 20 6"/></svg></button>
+{% if subscribed %}
+<script>
+(function(){
+  var tracker = document.getElementById('tracker');
+  if (tracker && tracker.classList.contains('notif-off')) return;
+  var w = document.getElementById('toggle-{{ product_key | replace(":", "-") }}');
+  if (w && window.animateCheckIn) {
+    var b = w.querySelector('.check-btn.checked');
+    if (b) window.animateCheckIn(b);
+  }
+})();
+</script>
+{% endif %}
+{% if oob | default(false) %}
+<span id="sub-note" hx-swap-oob="true">{{ sub_note }}</span>
+{% endif %}

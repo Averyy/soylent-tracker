@@ -1,0 +1,33 @@
+<div class="card-row product-card" id="product-{{ p.key | replace(':', '-') }}" role="button" tabindex="0"
+  onclick="(function(e){if(e.target.closest('a,button'))return;{% if p.available %}window.open({{ p.url | tojson }},'_blank','noopener');{% else %}window._checkToggle('{{ p.key | replace(':', '-') }}');{% endif %}})(event)"
+  onkeydown="(function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();{% if p.available %}window.open({{ p.url | tojson }},'_blank','noopener');{% else %}window._checkToggle('{{ p.key | replace(':', '-') }}');{% endif %}}})(event)">
+  <div class="product-info">
+    <div class="product-top-row">
+      {% if p.available %}
+      <a href="{{ p.url }}" target="_blank" rel="noopener" class="product-name">{{ p.title }}</a>
+      {% else %}
+      <span class="product-name product-name-oos" role="button" tabindex="0"
+        onkeydown="if(event.key==='Enter'||event.key===' ')window._checkToggle('{{ p.key | replace(':', '-') }}')">{{ p.title }}</span>
+      {% endif %}
+      <span class="status {{ 'in-stock' if p.available else 'out-of-stock' }}">
+        <span class="status-dot"></span>
+        {{ p.status_label }}
+      </span>
+    </div>
+    <div class="product-meta">
+      <a href="{{ p.url }}" target="_blank" rel="noopener" class="source-badge{{ ' amazon' if p.source == 'amazon-ca' else '' }}">{{ p.source_label }}</a>
+      {% if p.price %}<span class="product-price">{{ p.price }}</span>{% endif %}
+      {% if p.detail %}<span class="product-detail{{ ' low-stock' if p.low_stock else '' }}">{{ p.detail }}</span>{% endif %}
+      <span class="product-detail time-ago">{{ p.relative_time | capitalize if p.relative_time in ('just now', 'unknown') else p.relative_time }}</span>
+    </div>
+  </div>
+  {% if p.available %}
+  <a href="{{ p.url }}" target="_blank" rel="noopener" class="buy-link" aria-label="Buy {{ p.title }}">Buy now {% include "partials/icon_external.html" %}</a>
+  {% else %}
+  <div class="sub-toggle" id="toggle-{{ p.key | replace(':', '-') }}">
+    {% with subscribed=p.subscribed, product_key=p.key, csrf_token=csrf_token %}
+      {% include "partials/toggle_btn.html" %}
+    {% endwith %}
+  </div>
+  {% endif %}
+</div>

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin Verify - Soylent Stock Tracker{% endblock %}
+{% block wrapper_class %}page-auth{% endblock %}
+
+{% block content %}
+<div class="auth-card rainbow-card auth-card--compact">
+  <a href="/admin" class="back-link"><span aria-hidden="true">&larr;</span> Cancel</a>
+  <h1>Enter Code</h1>
+  <p class="subtitle">A code was sent to the admin phone via <span class="imessage-green">Text Message</span>. Please enter it below.</p>
+  {% with action_url="/admin/verify" %}
+    {% include "partials/otp_form.html" %}
+  {% endwith %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/otp.js?v={{ asset_hash('js/otp.js') }}"></script>
+{% endblock %}

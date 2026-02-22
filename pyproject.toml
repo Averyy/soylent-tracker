@@ -1,0 +1,21 @@
+[project]
+name = "soylent-tracker"
+version = "0.1.0"
+description = "Stock tracker for Soylent products on soylent.ca and Amazon.ca"
+requires-python = ">=3.14"
+dependencies = [
+    "curl-cffi>=0.14.0",
+    "fastapi>=0.129.0",
+    "jinja2>=3.1.6",
+    "python-dotenv>=1.2.1",
+    "python-multipart>=0.0.22",
+    "twilio>=9.10.2",
+    "uvicorn>=0.41.0",
+    "watchfiles>=1.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+]

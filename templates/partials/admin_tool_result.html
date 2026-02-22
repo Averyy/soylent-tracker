@@ -1,0 +1,14 @@
+{% if error %}
+<div class="admin-result admin-result--error" role="alert">
+  <span class="admin-result-status">Error</span>
+  <span>{{ error }}</span>
+</div>
+{% endif %}
+{% if success %}
+<div class="admin-result admin-result--ok" role="alert">
+  <span class="admin-result-status">Sent</span>
+  {% if message_preview %}
+  <pre class="admin-result-preview">{{ message_preview }}</pre>
+  {% endif %}
+</div>
+{% endif %}

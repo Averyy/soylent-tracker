@@ -1,0 +1,59 @@
+x-data-env: &data-env
+  STATE_FILE: /app/data/state.json
+  USERS_FILE: /app/data/users.json
+  HISTORY_FILE: /app/data/history.json
+  LOG_FILE: /app/data/soylent-tracker.log
+  SHOPIFY_ETAG_FILE: /app/data/.shopify_etag
+  SESSION_SECRET_FILE: /app/data/.session_secret
+  SMS_STATS_FILE: /app/data/sms_stats.json
+
+x-checker-defaults: &checker-defaults
+  build: .
+  restart: unless-stopped
+  volumes:
+    - tracker-data:/app/data
+  depends_on:
+    web:
+      condition: service_healthy
+
+services:
+  web:
+    build: .
+    container_name: soylent-tracker-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8745:8745"
+    environment:
+      <<: *data-env
+      DEV_MODE: "1"
+      SECURE_COOKIES: "0"
+      ADMIN_PHONE: "+15555555555"
+    volumes:
+      - tracker-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8745/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  soylent-checker:
+    <<: *checker-defaults
+    container_name: soylent-tracker-soylent-checker
+    environment:
+      <<: *data-env
+      CHECK_INTERVAL: ${SOYLENT_CHECK_INTERVAL:-60}
+    command: >
+      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.soylent_checker; sleep "$CHECK_INTERVAL" & wait $!; done'
+
+  amazon-checker:
+    <<: *checker-defaults
+    container_name: soylent-tracker-amazon-checker
+    environment:
+      <<: *data-env
+      CHECK_INTERVAL: ${AMAZON_CHECK_INTERVAL:-1200}
+    command: >
+      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.amazon_checker; sleep "$CHECK_INTERVAL" & wait $!; done'
+
+volumes:
+  tracker-data:

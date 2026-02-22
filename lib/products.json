@@ -1,0 +1,61 @@
+{
+  "shopify-ca:4565600075860": {
+    "category": "accessories"
+  },
+  "shopify-ca:7598899986622": {
+    "hidden": true
+  },
+  "shopify-ca:7598924464318": {
+    "hidden": true
+  },
+  "shopify-ca:7598920990910": {
+    "hidden": true
+  },
+  "shopify-ca:4376580980820": {
+    "sms_name": "Soylent drink (chocolate)"
+  },
+  "shopify-ca:7096503009470": {
+    "sms_name": "Soylent drink (strawberry)"
+  },
+  "shopify-ca:4376664211540": {
+    "name": "Soylent Drink - Cafe Mocha",
+    "sms_name": "Soylent drink (cafe mocha)"
+  },
+  "shopify-ca:7296363462846": {
+    "name": "Soylent Drinks Bundle (Chocolate, Strawberry, Cafe Mocha)",
+    "sms_name": "Soylent drink (bundle)"
+  },
+  "shopify-ca:7743618318526": {
+    "name": "Soylent Custom Subscription Builder",
+    "category": "prepaid",
+    "sms_name": "Soylent drink (custom)",
+    "no_expand": true
+  },
+  "shopify-ca:4376685609044": {
+    "sms_name": "Soylent powder (original)"
+  },
+  "shopify-ca:4376715001940": {
+    "sms_name": "Soylent powder (chocolate)"
+  },
+  "shopify-ca:7296363757758": {
+    "name": "Soylent Powder - Starter Pack",
+    "sms_name": "Soylent powder (starter pack)"
+  },
+  "amazon-ca:B08V6JFZSR": {
+    "name": "Soylent Complete Nutrition Shake - Mocha",
+    "sms_name": "Soylent drink (mocha)"
+  },
+  "amazon-ca:B09MYG2KLY": {
+    "name": "Soylent Complete Nutrition Shake - Creamy Chocolate",
+    "sms_name": "Soylent drink (chocolate)"
+  },
+  "amazon-ca:B08V6JH4SL": {
+    "name": "Soylent Complete Nutrition Shake - Original",
+    "sms_name": "Soylent drink (original)"
+  },
+  "amazon-ca:B0DW68KZX7": {
+    "name": "Soylent Complete Nutrition Powder - Original",
+    "category": "powder",
+    "sms_name": "Soylent powder (original)"
+  }
+}

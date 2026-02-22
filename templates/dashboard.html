@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Tracker - Soylent Stock Tracker{% endblock %}
+
+{% block content %}
+<div id="tracker" class="{{ 'notif-off' if not notif_enabled else '' }}">
+<div class="tracker-header rainbow-card">
+  <div class="tracker-header-top">
+    {% include "partials/logo.html" %}
+    <div class="tracker-header-actions">
+      <div id="notif-toggle">
+        {% include "partials/notif_toggle.html" %}
+      </div>
+      <form method="POST" action="/logout" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-ghost btn-sm" aria-label="Sign out">Log Out</button>
+      </form>
+    </div>
+  </div>
+  <div class="tracker-meta">
+    <span class="fw-500 text-primary">{{ phone_display }}:</span> <span id="sub-note">{{ sub_note }}</span>
+    <span class="region-label">{% include "partials/flag_ca.html" %} Canada</span>
+  </div>
+</div>
+
+{% if drinks or powder or prepaid or accessories %}
+  {% if drinks %}
+  <div class="products-section">
+    <h2 class="section-label">Drinks</h2>
+    <div class="card-list">
+      {% for p in drinks %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if powder %}
+  <div class="products-section">
+    <h2 class="section-label">Powder</h2>
+    <div class="card-list">
+      {% for p in powder %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if prepaid %}
+  <div class="products-section">
+    <h2 class="section-label">Prepaid Plans</h2>
+    <div class="card-list">
+      {% for p in prepaid %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if accessories %}
+  <div class="products-section">
+    <h2 class="section-label">Accessories</h2>
+    <div class="card-list">
+      {% for p in accessories %}
+        {% include "partials/product_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% else %}
+  <div class="empty-state">
+    <p>No products tracked yet.</p>
+    <p class="fs-xs">Run the checkers to populate stock data.</p>
+  </div>
+{% endif %}
+</div>
+<script>
+document.body.addEventListener('notifOn', function() {
+  var tracker = document.getElementById('tracker');
+  tracker.classList.remove('notif-off');
+  // Animate checks back in with stagger
+  var btns = tracker.querySelectorAll('.check-btn.checked');
+  btns.forEach(function(btn, i) {
+    setTimeout(function() { window.animateCheckIn(btn); }, i * 50);
+  });
+});
+
+document.body.addEventListener('notifOff', function() {
+  var tracker = document.getElementById('tracker');
+  tracker.classList.add('notif-off');
+});
+
+// Clicking OOS product name triggers its check button
+window._checkToggle = function(key) {
+  var tracker = document.getElementById('tracker');
+  if (tracker && tracker.classList.contains('notif-off')) return;
+  var wrap = document.getElementById('toggle-' + key);
+  if (wrap) { var btn = wrap.querySelector('.check-btn'); if (btn) btn.click(); }
+};
+
+// Check button stroke-draw + spring pop
+window.animateCheckIn = function(btn) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (typeof anime === 'undefined') return;
+  var icon = btn.querySelector('.check-icon');
+  var line = icon && icon.querySelector('polyline');
+  if (!icon || !line) return;
+
+  var len = line.getTotalLength();
+
+  // Force hidden before browser paints
+  icon.style.opacity = '0';
+  icon.style.transform = 'scale(0)';
+  line.style.strokeDasharray = len;
+  line.style.strokeDashoffset = len;
+
+  // Spring pop the icon in
+  anime.animate(icon, {
+    opacity: [0, 1],
+    scale: [0, 1],
+    ease: anime.spring({ mass: 1, stiffness: 120, damping: 12 }),
+  });
+
+  // Draw the check stroke via rAF
+  var start = null;
+  var dur = 350;
+  var delay = 100;
+  function draw(ts) {
+    if (!start) start = ts;
+    var t = Math.max(0, ts - start - delay) / dur;
+    if (t > 1) t = 1;
+    var eased = 1 - Math.pow(1 - t, 3);
+    line.style.strokeDashoffset = len * (1 - eased);
+    if (t < 1) requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+};
+</script>
+{% endblock %}

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard - Soylent Stock Tracker{% endblock %}
+
+{% block content %}
+<div class="admin-header rainbow-card">
+  <div class="admin-header-top">
+    <h1 class="admin-title">Admin Dashboard</h1>
+    <form method="POST" action="/admin/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="btn btn-ghost btn-sm" aria-label="Sign out of admin">Log Out</button>
+    </form>
+  </div>
+</div>
+
+<div class="admin-stats">
+  <div class="stat-card">
+    <div class="stat-value">{{ total_products }}</div>
+    <div class="stat-label">Products</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value stat-value--green">{{ in_stock }}</div>
+    <div class="stat-label">In Stock</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value stat-value--red">{{ out_of_stock }}</div>
+    <div class="stat-label">Out of Stock</div>
+  </div>
+</div>
+
+<div class="admin-section">
+  <h2 class="section-label">SMS Usage</h2>
+  <div class="admin-stats admin-stats--inline">
+    <div class="stat-card">
+      <div class="stat-value">{{ sms_stats.today }}<span class="stat-cap">/{{ sms_stats.cap }}</span></div>
+      <div class="stat-label">Sent Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ '{:,}'.format(sms_stats.total) }}</div>
+      <div class="stat-label">All Time</div>
+    </div>
+  </div>
+  {% if sms_stats.by_user %}
+  <div class="card-list sms-phone-list">
+    {% for u in sms_stats.by_user %}
+    <div class="card-row admin-list-row">
+      <div class="admin-sms-info">
+        <div class="admin-sms-user">
+          {% if u.name %}<span class="admin-sms-name">{{ u.name }}</span>{% endif %}
+          <span class="admin-phone-label">{{ u.phone_display }}</span>
+        </div>
+        {% if u.last_msg %}
+        <div class="admin-sms-last-msg">{{ u.last_msg }}</div>
+        {% endif %}
+      </div>
+      <span class="admin-sms-count">{{ u.last_time if u.last_time else '{:,}'.format(u.count) ~ ' sent' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="admin-section">
+  <h2 class="section-label">Users</h2>
+  <div id="admin-users">
+    {% include "partials/admin_users.html" %}
+  </div>
+</div>
+
+<div class="admin-section">
+  <h2 class="section-label">Recent History</h2>
+  {% if history %}
+  <div class="card-list">
+    {% for e in history %}
+    <div class="card-row admin-list-row">
+      <div class="admin-event-info">
+        <span class="admin-event-title">{{ e.title }}</span>
+        <div class="admin-event-meta">
+          {% if e.available %}
+          <span class="status in-stock"><span class="status-dot"></span> In Stock</span>
+          {% else %}
+          <span class="status out-of-stock"><span class="status-dot"></span> Out of Stock</span>
+          {% endif %}
+          <span class="source-badge{{ ' amazon' if 'Amazon' in e.source else '' }}">{{ e.source }}</span>
+          {% if e.inventory_qty %}
+          <span class="product-detail">{{ '{:,}'.format(e.inventory_qty) }} units</span>
+          {% endif %}
+        </div>
+      </div>
+      <span class="time-ago ws-nowrap">{{ e.relative_time }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state anim-nodelay">
+    <p>No stock changes recorded yet.</p>
+    <p class="fs-xs">Changes will appear here when the checkers detect availability flips.</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="admin-section" x-data="{ toolsOpen: false }">
+  <button class="admin-accordion-toggle" @click="toolsOpen = !toolsOpen" :aria-expanded="toolsOpen" aria-label="Toggle developer tools">
+    <span class="section-label section-label--inline">Developer Tools</span>
+    <svg class="admin-accordion-icon" :class="{ 'admin-accordion-icon--open': toolsOpen }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
+  <div x-show="toolsOpen" x-cloak x-transition.duration.200ms>
+    <div class="admin-tools">
+      <div class="admin-tool-group">
+        <div class="admin-tool-header">Test SMS</div>
+        <p class="admin-tool-desc">Send a test message to the admin phone.</p>
+        <form hx-post="/admin/test-sms" hx-target="#tool-result" hx-swap="innerHTML">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn btn-sm" aria-label="Send test SMS" hx-disabled-elt="this">Send Test SMS</button>
+        </form>
+      </div>
+      <div class="admin-tool-group">
+        <div class="admin-tool-header">Simulate Restock</div>
+        <p class="admin-tool-desc">Preview a restock notification. Sends to admin phone only.</p>
+        <form hx-post="/admin/test-notify" hx-target="#tool-result" hx-swap="innerHTML">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="admin-product-checks">
+            {% for p in products %}
+            <label class="admin-check-label">
+              <input type="checkbox" name="product_keys" value="{{ p.key }}">
+              <span>{{ p.name }}</span>
+            </label>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-sm" aria-label="Send restock notification" hx-disabled-elt="this">Send Notification</button>
+        </form>
+      </div>
+      <div id="tool-result"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

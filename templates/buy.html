@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Buy Soylent in Canada - In Stock Now{% endblock %}
+{% block head_extra %}
+  <meta name="description" content="See what Soylent products are currently in stock in Canada. Buy from soylent.ca and Amazon.ca.">
+  <meta property="og:title" content="Buy Soylent in Canada - In Stock Now">
+  <meta property="og:description" content="See what Soylent products are currently in stock in Canada.">
+  <meta property="og:type" content="website">
+{% endblock %}
+
+{% block content %}
+<div class="tracker-header rainbow-card">
+  <div class="tracker-header-top">
+    {% include "partials/logo.html" %}
+    <a href="{{ '/tracker' if logged_in else '/' }}" class="btn btn-ghost btn-sm">Dashboard</a>
+  </div>
+  <div class="tracker-meta">
+    <span class="buy-status"><span class="buy-dot"></span> In stock now:</span> <span>Last updated {{ last_updated }}</span>
+    <span class="region-label">{% include "partials/flag_ca.html" %} Canada</span>
+  </div>
+</div>
+
+{% if drinks or powder or prepaid or accessories %}
+  {% if drinks %}
+  <div class="products-section">
+    <h2 class="section-label">Drinks</h2>
+    <div class="card-list">
+      {% for p in drinks %}
+        {% include "partials/buy_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if powder %}
+  <div class="products-section">
+    <h2 class="section-label">Powder</h2>
+    <div class="card-list">
+      {% for p in powder %}
+        {% include "partials/buy_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if prepaid %}
+  <div class="products-section">
+    <h2 class="section-label">Prepaid Plans</h2>
+    <div class="card-list">
+      {% for p in prepaid %}
+        {% include "partials/buy_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if accessories %}
+  <div class="products-section">
+    <h2 class="section-label">Accessories</h2>
+    <div class="card-list">
+      {% for p in accessories %}
+        {% include "partials/buy_card.html" %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+{% else %}
+  <div class="empty-state">
+    <p>Nothing in stock right now.</p>
+    <p class="fs-xs">Check back soon — we'll send a text when products restock.</p>
+  </div>
+{% endif %}
+{% endblock %}

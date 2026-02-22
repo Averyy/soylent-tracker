@@ -1,0 +1,88 @@
+x-data-env: &data-env
+  STATE_FILE: /app/data/state.json
+  USERS_FILE: /app/data/users.json
+  HISTORY_FILE: /app/data/history.json
+  LOG_FILE: /app/data/soylent-tracker.log
+  SHOPIFY_ETAG_FILE: /app/data/.shopify_etag
+  SESSION_SECRET_FILE: /app/data/.session_secret
+  SMS_STATS_FILE: /app/data/sms_stats.json
+  PYTHONUNBUFFERED: "1"
+
+x-checker-defaults: &checker-defaults
+  image: ghcr.io/averyy/soylent-tracker:latest
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - tracker-data:/app/data
+  depends_on:
+    web:
+      condition: service_healthy
+  deploy:
+    resources:
+      limits:
+        memory: 256M
+        cpus: '0.5'
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  web:
+    image: ghcr.io/averyy/soylent-tracker:latest
+    container_name: soylent-tracker-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8745:8745"
+    networks:
+      - web
+    env_file: .env
+    environment:
+      <<: *data-env
+    volumes:
+      - tracker-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8745/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  soylent-checker:
+    <<: *checker-defaults
+    container_name: soylent-tracker-soylent-checker
+    environment:
+      <<: *data-env
+      CHECK_INTERVAL: ${SOYLENT_CHECK_INTERVAL:-60}
+    command: >
+      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.soylent_checker || echo "[ERROR] soylent_checker exited with code $?" >&2; sleep "$CHECK_INTERVAL" & wait $!; done'
+
+  amazon-checker:
+    <<: *checker-defaults
+    container_name: soylent-tracker-amazon-checker
+    environment:
+      <<: *data-env
+      CHECK_INTERVAL: ${AMAZON_CHECK_INTERVAL:-1200}
+    command: >
+      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.amazon_checker || echo "[ERROR] amazon_checker exited with code $?" >&2; sleep "$CHECK_INTERVAL" & wait $!; done'
+
+volumes:
+  tracker-data:
+    # MUST be a local filesystem volume (not NFS/CIFS).
+    # fcntl.flock() silently degrades to a no-op on network filesystems,
+    # which would cause data corruption in state.json/users.json.
+
+networks:
+  web:
+    external: true

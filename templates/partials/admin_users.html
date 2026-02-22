@@ -1,0 +1,105 @@
+{% if error %}
+<div class="error-msg anim-nodelay" role="alert">{{ error }}</div>
+{% endif %}
+
+<div class="admin-add-user">
+  <form hx-post="/admin/add-user" hx-target="#admin-users" hx-swap="innerHTML" class="admin-add-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="admin-add-fields">
+      <div class="admin-add-field admin-add-field--phone">
+        <label class="admin-field-label" for="add-phone">Phone</label>
+        <div class="phone-field phone-field--admin">
+          <span class="phone-prefix">+1</span>
+          <input type="tel" name="phone" id="add-phone" required maxlength="10" inputmode="numeric"
+                 placeholder="5551234567" autocomplete="tel"
+                 oninput="sanitizePhone(this)"
+                 aria-label="New user phone number">
+        </div>
+      </div>
+      <div class="admin-add-field admin-add-field--name">
+        <label class="admin-field-label" for="add-name">Name</label>
+        <input type="text" name="name" id="add-name" placeholder="Optional" maxlength="50"
+               class="admin-field-input" aria-label="New user name">
+      </div>
+      <button type="submit" class="btn btn-sm admin-add-btn" aria-label="Add user">Add User</button>
+    </div>
+  </form>
+</div>
+
+{% if users %}
+<div class="card-list">
+  {% for u in users %}
+  <div class="admin-user-row" x-data="{ open: false, editing: false }">
+    <div class="card-row admin-list-row admin-user-toggle" @click="if (!editing) open = !open" role="button" tabindex="0"
+         @keydown.enter="if (!editing) open = !open" :aria-expanded="open" aria-label="Toggle subscription details">
+      <div class="admin-user-info">
+        <span class="admin-user-name" x-show="!editing">{{ u.name or 'Unnamed' }}</span>
+        <span class="admin-user-phone" x-show="!editing">{{ u.phone_display }}</span>
+        <button class="admin-edit-btn" x-show="!editing"
+                @click.stop="editing = true; $nextTick(() => { $refs.nameinput.focus(); $refs.nameinput.select(); })"
+                aria-label="Edit name for {{ u.name or 'user' }}" title="Edit name">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <form class="admin-rename-form" x-show="editing" x-cloak @click.stop
+              hx-post="/admin/rename-user" hx-target="#admin-users" hx-swap="innerHTML">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="phone" value="{{ u.phone }}">
+          <input type="text" name="name" value="{{ (u.name or '') | e }}"
+                 maxlength="50" class="admin-rename-input"
+                 x-ref="nameinput"
+                 @keydown.escape.prevent="editing = false"
+                 @keydown.enter.prevent="editing = false; $el.form.requestSubmit()"
+                 aria-label="Edit name for {{ u.phone_display }}">
+          <div class="admin-rename-actions">
+            <button type="submit" class="admin-rename-btn admin-rename-btn--save" @click="editing = false" aria-label="Save name" title="Save">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <button type="button" class="admin-rename-btn admin-rename-btn--cancel" @click="editing = false" aria-label="Cancel editing" title="Cancel">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </form>
+      </div>
+      <div class="admin-user-meta">
+        <span class="admin-badge">{{ u.subscriptions | length }} sub{{ 's' if u.subscriptions | length != 1 else '' }}</span>
+        {% if u.notifications_enabled %}
+        <span class="admin-badge admin-badge--on">Notifs on</span>
+        {% else %}
+        <span class="admin-badge admin-badge--off">Notifs off</span>
+        {% endif %}
+        {% if u.phone != admin_phone %}
+        <form hx-post="/admin/remove-user" hx-target="#admin-users" hx-swap="innerHTML"
+              hx-confirm="Remove {{ (u.name ~ ' (' ~ u.phone_display ~ ')' if u.name else u.phone_display)|e }}?"
+              @click.stop class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="phone" value="{{ u.phone }}">
+          <button type="submit" class="admin-remove-btn" aria-label="Remove {{ u.name or 'user' }}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          </button>
+        </form>
+        {% else %}
+        <span class="admin-lock-btn" title="Admin (cannot remove)" aria-label="Admin user, cannot remove">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="admin-user-detail" x-show="open" x-cloak>
+      <div class="admin-user-subs">
+        {% if u.subscriptions %}
+        {% for key in u.subscriptions %}
+        <span class="admin-badge">{{ key }}</span>
+        {% endfor %}
+        {% else %}
+        <span class="admin-user-detail-empty">No subscriptions</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state anim-nodelay">
+  <p>No users yet.</p>
+</div>
+{% endif %}

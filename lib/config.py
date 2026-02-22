@@ -47,6 +47,12 @@ SOURCE_LABELS = {
     SOURCE_AMAZON_CA: "Amazon.ca",
 }
 
+# ── Checker intervals (seconds, 0 = disabled, min 10) ──
+_raw_soylent_interval = int(os.environ.get("SOYLENT_CHECK_INTERVAL", 60))
+_raw_amazon_interval = int(os.environ.get("AMAZON_CHECK_INTERVAL", 1200))
+SOYLENT_CHECK_INTERVAL = 0 if _raw_soylent_interval <= 0 else max(_raw_soylent_interval, 10)
+AMAZON_CHECK_INTERVAL = 0 if _raw_amazon_interval <= 0 else max(_raw_amazon_interval, 10)
+
 # ── SMS Stats ──
 SMS_STATS_FILE = Path(os.environ.get("SMS_STATS_FILE", str(PROJECT_ROOT / "sms_stats.json")))
 

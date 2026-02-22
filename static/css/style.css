@@ -1702,6 +1702,10 @@ html.dark .admin-badge--accent {
 
 /* ── Buy page ── */
 
+.page-buy {
+  padding-bottom: 24px;
+}
+
 .buy-status {
   display: inline-flex;
   align-items: center;
@@ -1777,6 +1781,7 @@ html.dark .buy-card:hover .buy-card-action { background: #263448; }
 
 @media (max-width: 520px) {
   .page { padding: 32px 16px 64px; }
+  .page-buy { padding-bottom: 16px; }
   .auth-card { padding: 32px 20px; }
   .tracker-header { padding: 20px 20px 16px; }
   .tracker-header-top { flex-wrap: wrap; gap: 12px; }

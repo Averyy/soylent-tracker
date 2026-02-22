@@ -20,6 +20,7 @@ lib/
   users.py                   users.json management
   soylent_checker.py         Shopify stock checker (soylent.ca)
   amazon_checker.py          Amazon.ca stock checker
+  scheduler.py               background checker scheduler
   registry.py                product classification + display names
   products.json              product registry (manual overrides)
   history.py                 stock change history
@@ -68,15 +69,17 @@ Dev login bypass (requires `DEV_MODE=1`): phone `5555555555`, code `5555`.
 
 ## Deployment
 
-Docker Compose runs three containers: web server, soylent checker (every 60s), and amazon checker (every 20min). CI/CD via GitHub Actions builds and deploys on push to main.
+Docker Compose runs a single container. The web server runs both stock checkers as background threads (soylent every 60s, amazon every 20min). CI/CD via GitHub Actions builds and deploys on push to main.
 
 ```bash
-docker compose up -d        # start all services
+docker compose up -d        # start
 docker compose logs -f      # follow logs
 docker compose pull && docker compose up -d   # update
 ```
 
 Requires a `.env` with `ADMIN_PHONE`, `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`, and `TWILIO_FROM`.
+
+Checker intervals are configurable via env vars: `SOYLENT_CHECK_INTERVAL` (default 60s) and `AMAZON_CHECK_INTERVAL` (default 1200s). Set to 0 to disable.
 
 ### Security Hardening
 

@@ -12,6 +12,13 @@
 
 **NEVER use Playwright MCP tools** unless explicitly asked to manually review something in the browser. No screenshots, no navigation, no snapshots. Just open files with `open` if needed.
 
+## Architecture
+
+- **Single container** -- checkers run as background threads in the web process via `lib/scheduler.py`
+- Scheduler uses a dedicated `ThreadPoolExecutor` (isolated from FastAPI's default executor)
+- Checker intervals configured via `SOYLENT_CHECK_INTERVAL` / `AMAZON_CHECK_INTERVAL` env vars (seconds, 0 = disabled, min 10)
+- Admin auth is cookie-based (`ADMIN_COOKIE`), fully separate from user auth -- no `users.json` entry needed for admin
+
 ## Testing & Guardrails
 
 - After any Python changes: `uv run python -c "from app import app"` to verify imports

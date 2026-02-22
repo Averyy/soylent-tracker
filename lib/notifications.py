@@ -8,6 +8,7 @@ SMS stats are persisted to sms_stats.json for the admin dashboard.
 import logging
 import os
 import re
+import threading
 import time
 
 from twilio.base.exceptions import TwilioRestException
@@ -33,6 +34,7 @@ _BLOCKED = {"+15555555555"}
 
 # Singleton Twilio client — reuse for connection pooling (SDK uses requests.Session)
 _client: Client | None = None
+_client_lock = threading.Lock()
 
 
 def _record_sms(phone: str, message: str) -> int:
@@ -77,14 +79,17 @@ def get_sms_stats() -> dict:
 
 
 def _get_client() -> Client | None:
-    """Get or create the singleton Twilio client."""
+    """Get or create the singleton Twilio client (thread-safe)."""
     global _client
     if _client is not None:
         return _client
-    if not all([TWILIO_ACCOUNT_SID, TWILIO_API_KEY, TWILIO_API_SECRET]):
-        return None
-    _client = Client(TWILIO_API_KEY, TWILIO_API_SECRET, TWILIO_ACCOUNT_SID)
-    return _client
+    with _client_lock:
+        if _client is not None:
+            return _client
+        if not all([TWILIO_ACCOUNT_SID, TWILIO_API_KEY, TWILIO_API_SECRET]):
+            return None
+        _client = Client(TWILIO_API_KEY, TWILIO_API_SECRET, TWILIO_ACCOUNT_SID)
+        return _client
 
 
 def send_sms(phone: str, message: str) -> bool:

@@ -8,26 +8,6 @@ x-data-env: &data-env
   SMS_STATS_FILE: /app/data/sms_stats.json
   PYTHONUNBUFFERED: "1"
 
-x-checker-defaults: &checker-defaults
-  image: ghcr.io/averyy/soylent-tracker:latest
-  restart: unless-stopped
-  env_file: .env
-  volumes:
-    - tracker-data:/app/data
-  depends_on:
-    web:
-      condition: service_healthy
-  deploy:
-    resources:
-      limits:
-        memory: 256M
-        cpus: '0.5'
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "10m"
-      max-file: "3"
-
 services:
   web:
     image: ghcr.io/averyy/soylent-tracker:latest
@@ -52,30 +32,12 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: '1.0'
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
-
-  soylent-checker:
-    <<: *checker-defaults
-    container_name: soylent-tracker-soylent-checker
-    environment:
-      <<: *data-env
-      CHECK_INTERVAL: ${SOYLENT_CHECK_INTERVAL:-60}
-    command: >
-      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.soylent_checker || echo "[ERROR] soylent_checker exited with code $?" >&2; sleep "$CHECK_INTERVAL" & wait $!; done'
-
-  amazon-checker:
-    <<: *checker-defaults
-    container_name: soylent-tracker-amazon-checker
-    environment:
-      <<: *data-env
-      CHECK_INTERVAL: ${AMAZON_CHECK_INTERVAL:-1200}
-    command: >
-      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.amazon_checker || echo "[ERROR] amazon_checker exited with code $?" >&2; sleep "$CHECK_INTERVAL" & wait $!; done'
 
 volumes:
   tracker-data:

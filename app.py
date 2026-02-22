@@ -14,6 +14,7 @@ NOTE: This app uses in-memory state for OTP codes and rate limiting.
 It must run as a single worker process (no multi-worker deployment).
 """
 
+import asyncio
 import hashlib
 import logging
 import os
@@ -57,6 +58,7 @@ from lib.notifications import send_sms, format_notification, get_sms_stats
 from lib.products import build_products
 from lib.registry import display_name, is_hidden
 from lib.state import load_state
+from lib.scheduler import start_checkers, stop_checkers
 from lib.users import find_user, load_users, locked_users
 
 # ──────────────────────────────────────────────
@@ -69,25 +71,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger(__name__)
-
-
-def _ensure_admin_user():
-    """Ensure the admin phone is always a registered user."""
-    if not config.ADMIN_PHONE:
-        return
-    if find_user(config.ADMIN_PHONE):
-        return
-    with locked_users() as users:
-        # Re-check under lock
-        if any(u["phone"] == config.ADMIN_PHONE for u in users):
-            return
-        users.append({
-            "phone": config.ADMIN_PHONE,
-            "name": "Admin",
-            "notifications_enabled": True,
-            "subscriptions": [],
-        })
-        log.info(f"Created admin user for {mask_phone(config.ADMIN_PHONE)}")
 
 
 def _check_single_worker():
@@ -105,8 +88,20 @@ def _check_single_worker():
 @asynccontextmanager
 async def lifespan(app):
     _check_single_worker()
-    _ensure_admin_user()
+    checker_tasks = await start_checkers()
     yield
+    stop_checkers()
+    if checker_tasks:
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*checker_tasks, return_exceptions=True),
+                timeout=30,
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    log.error("Checker thread error during shutdown", exc_info=r)
+        except TimeoutError:
+            log.warning("Checker threads did not stop within 30s")
 
 
 app = FastAPI(

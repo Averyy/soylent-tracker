@@ -7,15 +7,6 @@ x-data-env: &data-env
   SESSION_SECRET_FILE: /app/data/.session_secret
   SMS_STATS_FILE: /app/data/sms_stats.json
 
-x-checker-defaults: &checker-defaults
-  build: .
-  restart: unless-stopped
-  volumes:
-    - tracker-data:/app/data
-  depends_on:
-    web:
-      condition: service_healthy
-
 services:
   web:
     build: .
@@ -36,24 +27,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-
-  soylent-checker:
-    <<: *checker-defaults
-    container_name: soylent-tracker-soylent-checker
-    environment:
-      <<: *data-env
-      CHECK_INTERVAL: ${SOYLENT_CHECK_INTERVAL:-60}
-    command: >
-      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.soylent_checker; sleep "$CHECK_INTERVAL" & wait $!; done'
-
-  amazon-checker:
-    <<: *checker-defaults
-    container_name: soylent-tracker-amazon-checker
-    environment:
-      <<: *data-env
-      CHECK_INTERVAL: ${AMAZON_CHECK_INTERVAL:-1200}
-    command: >
-      sh -c 'trap "exit 0" TERM INT; while true; do python -m lib.amazon_checker; sleep "$CHECK_INTERVAL" & wait $!; done'
 
 volumes:
   tracker-data:

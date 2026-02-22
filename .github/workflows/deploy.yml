@@ -73,7 +73,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Deploy to VPS
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262  # v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}

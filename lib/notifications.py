@@ -139,7 +139,7 @@ def format_notification(restocked: list[dict]) -> str:
         c = restocked[0]
         name = sms_name(c["key"], c.get("title", c["key"]))
         url = product_url(c["key"], c.get("handle"))
-        return f"{name} is back in stock:\n{url}"
+        return f"{name} is back in stock:\n{url}\n\nYou've been unsubscribed from this product."
 
     # Multiple products — group by prefix, link to tracker
     groups: dict[str, list[str]] = {}  # prefix -> [flavour, ...]
@@ -165,14 +165,22 @@ def format_notification(restocked: list[dict]) -> str:
     else:
         label = ", ".join(type_parts[:-1]) + ", and " + type_parts[-1]
     verb = "is" if len(type_parts) == 1 else "are"
-    return f"{label} {verb} back in stock:\n{TRACKER_URL}"
+    return f"{label} {verb} back in stock:\n{TRACKER_URL}\n\nYou've been unsubscribed from these products."
 
 
 def notify_changes(changes: list[dict], users: list[dict]) -> None:
-    """Send one bundled SMS per subscriber for all back-in-stock changes."""
+    """Send one bundled SMS per subscriber for all back-in-stock changes.
+
+    After a successful notification, the notified product keys are removed
+    from the user's subscriptions (one-shot alert). Users must re-subscribe
+    to get notified again.
+    """
     restocked = [c for c in changes if c["available"]]
     if not restocked:
         return
+
+    # Track which users were notified for which keys
+    notified: list[tuple[str, set[str]]] = []  # (phone, {keys...})
 
     for user in users:
         if not user.get("notifications_enabled", True):
@@ -185,5 +193,23 @@ def notify_changes(changes: list[dict], users: list[dict]) -> None:
 
         message = format_notification(user_changes)
         sent = send_sms(user["phone"], message)
-        if not sent:
+        if sent:
+            notified.append((user["phone"], {c["key"] for c in user_changes}))
+        else:
             log.warning(f"Failed to notify {mask_phone(user['phone'])}")
+
+    # Unsubscribe notified users from the products they were alerted about
+    if notified:
+        from .users import locked_users
+        with locked_users() as all_users:
+            for phone, keys in notified:
+                for u in all_users:
+                    if u["phone"] == phone:
+                        before = len(u.get("subscriptions", []))
+                        u["subscriptions"] = [
+                            s for s in u.get("subscriptions", []) if s not in keys
+                        ]
+                        after = len(u["subscriptions"])
+                        if before != after:
+                            log.info(f"Auto-unsubscribed {mask_phone(phone)} from {before - after} product(s)")
+                        break

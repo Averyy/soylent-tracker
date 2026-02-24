@@ -41,6 +41,7 @@ from lib.auth import (
     check_global_sms_throttle,
     check_rate_limit,
     get_admin_csrf,
+    get_client_ip,
     get_csrf_token,
     get_session_phone,
     is_admin,
@@ -113,6 +114,20 @@ app = FastAPI(
 )
 
 
+# ── IP ban list (in-memory, resets on restart) ──
+_banned_ips: set[str] = set()
+_BAN_CAP = 10_000
+_HONEYPOT_PATHS = (
+    "/wp-admin", "/wp-login", "/wp-login.php", "/wp-config", "/wp-content",
+    "/wordpress", "/xmlrpc.php", "/.env", "/phpinfo", "/phpmyadmin",
+    "/administrator", "/admin.php",
+)
+
+
+# Middleware executes in reverse registration order (LIFO).
+# security_headers registered first → runs second (inner).
+# ban_middleware registered second → runs first (outer), short-circuiting banned IPs.
+
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     maybe_purge()
@@ -133,6 +148,20 @@ async def security_headers(request: Request, call_next):
     if os.environ.get("SECURE_COOKIES", "1") != "0":
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
+
+
+@app.middleware("http")
+async def ban_middleware(request: Request, call_next):
+    client_ip = get_client_ip(request)
+    if client_ip in _banned_ips:
+        return Response(status_code=403)
+    path = request.url.path.rstrip("/").lower()
+    if path.startswith(_HONEYPOT_PATHS):
+        if len(_banned_ips) < _BAN_CAP:
+            _banned_ips.add(client_ip)
+        log.warning(f"Banned {client_ip} (probed {request.url.path!r})")
+        return Response(status_code=403)
+    return await call_next(request)
 
 
 @app.get("/health")

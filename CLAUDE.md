@@ -49,12 +49,13 @@
 
 Exception: prefer dedicated MCP tools for specific services (e.g., `gh` CLI for GitHub).
 
-## HTTP Client Reference
+## HTTP Client
 
-Modeled after `~/code/fetchaller-mcp/`. For bot detection issues, read:
-- `src/fetchaller/content/fetcher.py` -- curl_cffi, fingerprints, headers, retries
-- `src/fetchaller/content/amazon.py` -- Amazon selectors, captcha detection
-- `src/fetchaller/content/soylent.py` -- Shopify rate limiting, inventory extraction
+- `lib/http_client.py` -- thin wrapper around `wafer.SyncSession` (TLS fingerprinting, challenge solving, retry, rate limiting all handled by wafer internally)
+- **Never set** `Sec-Ch-Ua*`, `Sec-Fetch-*`, `Accept-Encoding`, `Accept-Language` manually -- wafer generates these from the active TLS fingerprint
+- Amazon checker uses `HttpClient(rate_limit=5.0, rate_jitter=7.0)` for built-in inter-request delays
+- Soylent checker passes `Accept: application/json` header for Shopify JSON API
+- wafer raises typed exceptions: `ChallengeDetected`, `EmptyResponse`, `WaferError` -- catch these around `client.fetch()` calls
 
 ## Conventions
 

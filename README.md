@@ -4,7 +4,7 @@ Stock tracker for Soylent products on soylent.ca and Amazon.ca. Sends SMS notifi
 
 ## Tech Stack
 
-Python 3.14, uv, FastAPI, Jinja2, HTMX + Alpine.js, curl_cffi, Twilio SMS, JSON files for state, Docker Compose for deployment.
+Python 3.14, uv, FastAPI, Jinja2, HTMX + Alpine.js, wafer-py, Twilio SMS, JSON files for state, Docker Compose for deployment.
 
 ## Project Structure
 
@@ -14,7 +14,7 @@ lib/
   auth.py                    sessions, CSRF, OTP, rate limiting
   products.py                product grouping + sort logic
   config.py                  centralized config + env var overrides
-  http_client.py             curl_cffi with TLS fingerprint rotation
+  http_client.py             wafer-py HTTP client wrapper
   notifications.py           Twilio SMS sending + stock alert formatting
   state.py                   state.json read/write with file locking
   users.py                   users.json management

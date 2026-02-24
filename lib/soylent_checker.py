@@ -64,7 +64,11 @@ def fetch_products(client: HttpClient) -> dict | str | None:
     if etag:
         extra_headers["If-None-Match"] = etag
 
-    result = client.fetch(PRODUCTS_URL, json_mode=True, headers=extra_headers)
+    try:
+        result = client.fetch(PRODUCTS_URL, headers={"Accept": "application/json", **extra_headers})
+    except Exception as e:
+        log.error(f"Failed to fetch Shopify products: {type(e).__name__}: {e}")
+        return None
 
     if result.status_code == 304:
         log.info("304 Not Modified - no changes")
@@ -102,36 +106,13 @@ def _parse_page_qty(html: str) -> int | None:
     return None
 
 
-def fetch_page_qty(client: HttpClient, handle: str, variant_id: str | None = None) -> int | None:
-    """Scrape inventory quantity from a product page.
-
-    For multi-variant products, pass variant_id to select the specific variant
-    (Shopify's gsf_conversion_data reflects the ?variant= query param).
-
-    Returns inventory count (can be negative for oversold), or None if not found.
-    """
-    url = f"https://soylent.ca/products/{handle}"
-    if variant_id:
-        url += f"?variant={variant_id}"
-    try:
-        time.sleep(random.uniform(0.5, 3.0))
-        result = client.fetch(url)
-        if result.status_code != 200:
-            return None
-        html = result.content.decode("utf-8", errors="replace")
-        return _parse_page_qty(html)
-    except Exception as e:
-        log.warning(f"Failed to fetch inventory for {handle}: {type(e).__name__}: {e}")
-    return None
-
-
 _PAGE_QTY_WORKERS = 4
 
 
 def _fetch_qty_task(args: tuple) -> tuple[int, int | None]:
     """Thread pool worker: fetch one product page's inventory quantity.
 
-    Uses its own HttpClient since curl_cffi Session is not thread-safe.
+    Uses its own HttpClient since wafer SyncSession is not thread-safe.
     Returns (index, quantity).
     """
     idx, handle, variant_id = args

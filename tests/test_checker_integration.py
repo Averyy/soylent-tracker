@@ -274,16 +274,14 @@ def test_amazon_detects_unavailable_product(mock_notify, MockClient, tmp_path):
 
 @patch("lib.amazon_checker.HttpClient")
 @patch("lib.amazon_checker.notify_changes")
-def test_amazon_skips_captcha(mock_notify, MockClient, tmp_path):
-    """Amazon checker skips products when captcha can't be solved."""
+def test_amazon_skips_challenge(mock_notify, MockClient, tmp_path):
+    """Amazon checker skips products when wafer raises ChallengeDetected."""
+    import wafer
     from lib.amazon_checker import check_all_asins
 
     with patch("lib.amazon_checker.get_amazon_asins", return_value={"B08TEST": "Test"}):
         client = MockClient.return_value.__enter__.return_value
-        # Small page with captcha indicators
-        html = '<html><body>Please continue shopping on Amazon</body></html>'
-        client.fetch.return_value = FetchResult(html.encode(), 200, {}, "")
-        client.solve_amazon_captcha.return_value = False
+        client.fetch.side_effect = wafer.ChallengeDetected("amazon", "https://amazon.ca/dp/B08TEST", 503)
 
         changes = check_all_asins()
 

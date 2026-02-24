@@ -1,8 +1,8 @@
 """Amazon.ca stock checker.
 
 Fetches product pages for tracked ASINs, parses div#availability for stock
-status, and notifies subscribers on changes. Includes captcha detection
-and jittered intervals between requests.
+status, and notifies subscribers on changes. Uses wafer's built-in rate
+limiting and challenge handling.
 
 Run on a schedule via Docker or cron.
 """
@@ -10,7 +10,8 @@ Run on a schedule via Docker or cron.
 import logging
 import random
 import re
-import time
+
+import wafer
 
 from .config import SOURCE_AMAZON_CA
 from .history import record_changes
@@ -23,18 +24,6 @@ from .state import locked_state, update_product
 log = logging.getLogger(__name__)
 
 AMAZON_CA_URL = "https://www.amazon.ca/dp/{asin}"
-
-
-def is_captcha(body: str) -> bool:
-    """Detect Amazon's rate-limit captcha page.
-
-    Captcha pages are small (<50KB) and contain "continue shopping".
-    Real product pages are 1-3MB.
-    """
-    if len(body) >= 50_000:
-        return False
-    lower = body.lower()
-    return "continue shopping" in lower and ("amazon" in lower or "amzn" in lower)
 
 
 def parse_availability(html: str) -> tuple[bool, str | None, int | None]:
@@ -102,7 +91,7 @@ def parse_availability(html: str) -> tuple[bool, str | None, int | None]:
 
 
 def check_all_asins() -> list[dict]:
-    """Check all ASINs with jittered intervals. Returns list of changes."""
+    """Check all ASINs with wafer rate limiting. Returns list of changes."""
     changes = []
     asin_list = list(get_amazon_asins().items())
 
@@ -111,13 +100,22 @@ def check_all_asins() -> list[dict]:
 
     # Fetch all results first (slow, network I/O — don't hold lock here)
     results = []
-    with HttpClient() as client:
-        for i, (asin, title) in enumerate(asin_list):
+    with HttpClient(rate_limit=5.0, rate_jitter=7.0) as client:
+        for asin, title in asin_list:
             url = AMAZON_CA_URL.format(asin=asin)
             log.info(f"Checking {asin} ({title})...")
 
             try:
                 result = client.fetch(url, timeout=20.0)
+            except wafer.ChallengeDetected as e:
+                log.warning(f"{asin} hit unsolvable {e.challenge_type} challenge")
+                continue
+            except wafer.EmptyResponse:
+                log.warning(f"{asin} returned empty response")
+                continue
+            except wafer.WaferError as e:
+                log.error(f"Failed to fetch {asin}: {e}")
+                continue
             except Exception as e:
                 log.error(f"Failed to fetch {asin}: {type(e).__name__}: {e}")
                 continue
@@ -128,34 +126,9 @@ def check_all_asins() -> list[dict]:
 
             html = result.content.decode("utf-8", errors="replace")
 
-            if is_captcha(html):
-                log.warning(f"Captcha detected for {asin} - attempting inline solve")
-                if client.solve_amazon_captcha(html, url):
-                    # Retry with solved cookies (session jar has them now)
-                    time.sleep(random.uniform(2.0, 4.0))
-                    try:
-                        result = client.fetch(url, timeout=20.0)
-                        html = result.content.decode("utf-8", errors="replace")
-                    except Exception as e:
-                        log.error(f"Retry after captcha solve failed for {asin}: {e}")
-                        continue
-                    if is_captcha(html):
-                        log.warning(f"Still captcha after solve for {asin} - skipping")
-                        continue
-                    log.info(f"Captcha bypassed for {asin}")
-                else:
-                    log.warning(f"Captcha solve failed for {asin} - skipping")
-                    continue
-
             available, status_text, count = parse_availability(html)
             log.info(f"  {asin}: available={available}, status={status_text}, count={count}")
             results.append((asin, title, available, status_text, count))
-
-            # Jittered delay between requests (5-12 seconds)
-            if i < len(asin_list) - 1:
-                delay = random.uniform(5.0, 12.0)
-                log.info(f"  Waiting {delay:.1f}s before next ASIN...")
-                time.sleep(delay)
 
     # Lock state only for the quick read-modify-write
     if results:

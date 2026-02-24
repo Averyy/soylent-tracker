@@ -28,4 +28,6 @@ EXPOSE 8745
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8745/health || exit 1
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8745", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,::1"]
+# Trust XFF from any source — safe because container is only reachable via
+# Docker network (Caddy proxy at 172.18.0.x) and localhost, never directly exposed.
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8745", "--proxy-headers", "--forwarded-allow-ips", "*"]

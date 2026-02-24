@@ -107,10 +107,20 @@ def maybe_purge() -> None:
 # Rate limiting
 # ──────────────────────────────────────────────
 
+def _is_trusted_proxy(ip: str) -> bool:
+    """Check if IP is a trusted reverse proxy (localhost or Docker bridge network)."""
+    if ip in ("127.0.0.1", "::1"):
+        return True
+    # Docker bridge networks use 172.16.0.0/12
+    if ip.startswith("172.") and 16 <= int(ip.split(".")[1]) <= 31:
+        return True
+    return False
+
+
 def get_client_ip(request: Request) -> str:
-    """Get the real client IP. Only trusts X-Forwarded-For from the local reverse proxy."""
+    """Get the real client IP. Trusts X-Forwarded-For from local and Docker proxies."""
     direct_ip = request.client.host if request.client else "unknown"
-    if direct_ip in ("127.0.0.1", "::1"):
+    if _is_trusted_proxy(direct_ip):
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
             return forwarded.split(",")[0].strip()

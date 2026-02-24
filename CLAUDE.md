@@ -18,6 +18,7 @@
 - Scheduler uses a dedicated `ThreadPoolExecutor` (isolated from FastAPI's default executor)
 - Checker intervals configured via `SOYLENT_CHECK_INTERVAL` / `AMAZON_CHECK_INTERVAL` env vars (seconds, 0 = disabled, min 10)
 - Admin auth is cookie-based (`ADMIN_COOKIE`), fully separate from user auth -- no `users.json` entry needed for admin
+- **`--forwarded-allow-ips "*"`** in Dockerfile is intentional -- container is only reachable via Docker network (Caddy) and localhost, never directly exposed. Do NOT restrict to `127.0.0.1` -- Caddy connects from Docker bridge (172.18.0.x), not localhost
 
 ## Testing & Guardrails
 

@@ -7,7 +7,6 @@ requests to save bandwidth.
 Run on a schedule via Docker or cron.
 """
 
-import json
 import logging
 import os
 import random
@@ -84,8 +83,8 @@ def fetch_products(client: HttpClient) -> dict | str | None:
         save_etag(new_etag)
 
     try:
-        return json.loads(result.content)
-    except json.JSONDecodeError:
+        return result.json()
+    except ValueError:
         log.error("Failed to parse Shopify JSON response")
         return None
 
@@ -125,7 +124,7 @@ def _fetch_qty_task(args: tuple) -> tuple[int, int | None]:
             result = client.fetch(url)
             if result.status_code != 200:
                 return idx, None
-            html = result.content.decode("utf-8", errors="replace")
+            html = result.text
             return idx, _parse_page_qty(html)
     except Exception as e:
         log.warning(f"Failed to fetch inventory for {handle}: {type(e).__name__}: {e}")

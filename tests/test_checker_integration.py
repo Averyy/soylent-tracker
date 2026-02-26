@@ -5,11 +5,10 @@ state transitions, history recording, and notification dispatch.
 """
 
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-
-from lib.http_client import FetchResult
 
 
 @pytest.fixture(autouse=True)
@@ -41,8 +40,28 @@ def _redirect_files(monkeypatch, tmp_path):
     users_file.write_text("[]")
 
 
-def _shopify_json(products: list[dict]) -> bytes:
-    return json.dumps({"products": products}).encode()
+def _mock_resp(body: str | bytes, status_code: int = 200, headers: dict | None = None):
+    """Build a mock WaferResponse-like object for testing."""
+    if isinstance(body, bytes):
+        content = body
+        text = body.decode("utf-8", errors="replace")
+    else:
+        content = body.encode()
+        text = body
+
+    def _json(**kwargs):
+        return json.loads(content)
+
+    return SimpleNamespace(
+        content=content, text=text, status_code=status_code,
+        headers=headers or {}, url="", ok=200 <= status_code < 300,
+        json=_json,
+    )
+
+
+def _shopify_resp(products: list[dict], **kwargs):
+    """Build a mock response containing Shopify products JSON."""
+    return _mock_resp(json.dumps({"products": products}), **kwargs)
 
 
 def _make_product(pid=1, title="Test Product", handle="test-product",
@@ -80,7 +99,7 @@ def test_shopify_detects_new_available_product(mock_notify, MockClient, tmp_path
     client = MockClient.return_value.__enter__.return_value
     client.fetch.side_effect = [
         # products.json
-        FetchResult(_shopify_json([_make_product()]), 200, {}, ""),
+        _shopify_resp([_make_product()]),
         # page qty fetch (from _batch_fetch_quantities worker creates its own client)
     ]
 
@@ -110,9 +129,7 @@ def test_shopify_detects_out_of_stock_transition(mock_notify, MockClient, tmp_pa
         state["shopify-ca:1"] = {"available": True, "title": "Test"}
 
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(
-        _shopify_json([_make_product(available=False)]), 200, {}, ""
-    )
+    client.fetch.return_value = _shopify_resp([_make_product(available=False)])
 
     with patch("lib.soylent_checker._batch_fetch_quantities", return_value={}):
         changes = check_products()
@@ -132,7 +149,7 @@ def test_shopify_304_updates_last_checked(mock_notify, MockClient, tmp_path):
         state["shopify-ca:1"] = {"available": True, "title": "Test", "last_checked": "old"}
 
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(b"", 304, {}, "")
+    client.fetch.return_value = _mock_resp(b"", status_code=304)
 
     changes = check_products()
     assert changes == []
@@ -152,9 +169,7 @@ def test_shopify_no_change_when_status_same(mock_notify, MockClient, tmp_path):
         state["shopify-ca:1"] = {"available": False, "title": "Test"}
 
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(
-        _shopify_json([_make_product(available=False)]), 200, {}, ""
-    )
+    client.fetch.return_value = _shopify_resp([_make_product(available=False)])
 
     with patch("lib.soylent_checker._batch_fetch_quantities", return_value={}):
         changes = check_products()
@@ -170,9 +185,7 @@ def test_shopify_page_qty_override(mock_notify, MockClient, tmp_path):
     from lib.state import load_state
 
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(
-        _shopify_json([_make_product(available=True)]), 200, {}, ""
-    )
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
 
     # Page says qty is 0
     with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 0}):
@@ -197,9 +210,7 @@ def test_shopify_stale_variants_cleaned(mock_notify, MockClient, tmp_path):
 
     # Product now single-variant
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(
-        _shopify_json([_make_product()]), 200, {}, ""
-    )
+    client.fetch.return_value = _shopify_resp([_make_product()])
 
     with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 50}):
         check_products()
@@ -219,9 +230,7 @@ def test_shopify_history_recorded(mock_notify, MockClient, tmp_path):
     from lib.history import load_history
 
     client = MockClient.return_value.__enter__.return_value
-    client.fetch.return_value = FetchResult(
-        _shopify_json([_make_product()]), 200, {}, ""
-    )
+    client.fetch.return_value = _shopify_resp([_make_product()])
 
     with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 50}):
         check_products()
@@ -245,7 +254,7 @@ def test_amazon_detects_available_product(mock_asins, mock_notify, MockClient, t
 
     client = MockClient.return_value.__enter__.return_value
     html = '<html>' + 'x' * 60_000 + '<span class="a-color-success">In Stock</span></html>'
-    client.fetch.return_value = FetchResult(html.encode(), 200, {}, "")
+    client.fetch.return_value = _mock_resp(html)
 
     changes = check_all_asins()
 
@@ -263,7 +272,7 @@ def test_amazon_detects_unavailable_product(mock_notify, MockClient, tmp_path):
     with patch("lib.amazon_checker.get_amazon_asins", return_value={"B08TEST": "Test"}):
         client = MockClient.return_value.__enter__.return_value
         html = '<html>' + 'x' * 60_000 + '<div id="outOfStock"><span>Currently unavailable.</span></div></div></html>'
-        client.fetch.return_value = FetchResult(html.encode(), 200, {}, "")
+        client.fetch.return_value = _mock_resp(html)
 
         changes = check_all_asins()
 
@@ -298,7 +307,7 @@ def test_amazon_history_recorded(mock_notify, MockClient, tmp_path):
     with patch("lib.amazon_checker.get_amazon_asins", return_value={"B08TEST": "Test"}):
         client = MockClient.return_value.__enter__.return_value
         html = '<html>' + 'x' * 60_000 + '<span class="a-color-success">In Stock</span></html>'
-        client.fetch.return_value = FetchResult(html.encode(), 200, {}, "")
+        client.fetch.return_value = _mock_resp(html)
 
         check_all_asins()
 

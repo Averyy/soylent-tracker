@@ -124,7 +124,7 @@ def check_all_asins() -> list[dict]:
                 log.warning(f"{asin} returned HTTP {result.status_code}")
                 continue
 
-            html = result.content.decode("utf-8", errors="replace")
+            html = result.text
 
             available, status_text, count = parse_availability(html)
             log.info(f"  {asin}: available={available}, status={status_text}, count={count}")

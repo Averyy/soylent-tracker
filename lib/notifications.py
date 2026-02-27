@@ -22,6 +22,7 @@ from .config import (
     TWILIO_API_KEY,
     TWILIO_API_SECRET,
     TWILIO_FROM,
+    UNSUB_STOCK_THRESHOLD,
 )
 from .file_lock import locked_json, read_json
 from .helpers import mask_phone, product_url
@@ -127,53 +128,78 @@ def send_sms(phone: str, message: str) -> bool:
 TRACKER_URL = os.environ.get("TRACKER_URL", "https://soylent.dev/buy")
 
 
-def format_notification(restocked: list[dict]) -> str:
+def _stock_suffix(qty: int | None) -> str:
+    """Return ' (N available)' if qty is known, else empty string."""
+    if qty is not None and qty > 0:
+        return f" ({qty} available)"
+    return ""
+
+
+def _footer(restocked: list[dict], unsub_keys: set[str]) -> str:
+    """Build the footer line based on which products are being unsubscribed."""
+    if len(restocked) == 1:
+        c = restocked[0]
+        qty = c.get("inventory_qty")
+        if c["key"] in unsub_keys:
+            return "You've been unsubscribed from this product."
+        elif qty is not None and qty > 0:
+            return "Limited stock, we'll keep watching."
+        else:
+            return "Unknown stock, we'll keep watching."
+
+    # Multiple products
+    all_unsub = all(c["key"] in unsub_keys for c in restocked)
+    none_unsub = not any(c["key"] in unsub_keys for c in restocked)
+    if all_unsub:
+        return "You've been unsubscribed from these products."
+    elif none_unsub:
+        return "We'll keep watching the low inventory products."
+    else:
+        return "You've been unsubscribed from high-stock items."
+
+
+def format_notification(restocked: list[dict], unsub_keys: set[str] | None = None) -> str:
     """Format a back-in-stock SMS.
 
-    Single product: direct product link.
-    Multiple: groups flavours, links to tracker.
+    Single product: direct product link with stock qty.
+    Multiple: one line per product with qty prefix, links to tracker.
+    unsub_keys: product keys being auto-unsubscribed (determines footer text).
     """
+    if unsub_keys is None:
+        unsub_keys = set()
 
     # Single product — direct link
     if len(restocked) == 1:
         c = restocked[0]
         name = sms_name(c["key"], c.get("title", c["key"]))
         url = product_url(c["key"], c.get("handle"))
-        return f"{name} is back in stock:\n{url}\n\nYou've been unsubscribed from this product."
+        qty = c.get("inventory_qty")
+        suffix = _stock_suffix(qty)
+        footer = _footer(restocked, unsub_keys)
+        return f"{name} is back in stock{suffix}:\n{url}\n\n{footer}"
 
-    # Multiple products — group by prefix, link to tracker
-    groups: dict[str, list[str]] = {}  # prefix -> [flavour, ...]
+    # Multiple products — one line per product
+    lines = []
     for c in restocked:
         name = sms_name(c["key"], c.get("title", c["key"]))
-        m = re.match(r'^(.+?)\s*\((.+)\)$', name)
-        if m:
-            groups.setdefault(m.group(1), []).append(m.group(2))
+        qty = c.get("inventory_qty")
+        if qty is not None and qty > 0:
+            lines.append(f"{qty}x {name}")
         else:
-            groups.setdefault(name, [])
+            lines.append(name)
 
-    type_parts = []
-    for prefix, flavours in groups.items():
-        if flavours:
-            type_parts.append(f"{prefix} ({', '.join(flavours)})")
-        else:
-            type_parts.append(prefix)
-
-    if len(type_parts) == 1:
-        label = type_parts[0]
-    elif len(type_parts) == 2:
-        label = " and ".join(type_parts)
-    else:
-        label = ", ".join(type_parts[:-1]) + ", and " + type_parts[-1]
-    verb = "is" if len(type_parts) == 1 else "are"
-    return f"{label} {verb} back in stock:\n{TRACKER_URL}\n\nYou've been unsubscribed from these products."
+    footer = _footer(restocked, unsub_keys)
+    product_list = "\n".join(lines)
+    return f"Back in stock:\n\n{product_list}\n\n{TRACKER_URL}\n\n{footer}"
 
 
 def notify_changes(changes: list[dict], users: list[dict]) -> None:
     """Send one bundled SMS per subscriber for all back-in-stock changes.
 
-    After a successful notification, the notified product keys are removed
-    from the user's subscriptions (one-shot alert). Users must re-subscribe
-    to get notified again.
+    After notification, products with stock > UNSUB_STOCK_THRESHOLD are
+    removed from the user's subscriptions. Low-stock and unknown-stock
+    products stay subscribed so the user gets re-notified if the product
+    flickers (goes OOS and comes back).
     """
     restocked = [c for c in changes if c["available"]]
     if not restocked:
@@ -191,12 +217,17 @@ def notify_changes(changes: list[dict], users: list[dict]) -> None:
         if not user_changes:
             continue
 
-        message = format_notification(user_changes)
+        unsub_keys = {
+            c["key"] for c in user_changes
+            if (c.get("inventory_qty") or 0) > UNSUB_STOCK_THRESHOLD
+        }
+        message = format_notification(user_changes, unsub_keys)
         sent = send_sms(user["phone"], message)
-        if sent:
-            notified.append((user["phone"], {c["key"] for c in user_changes}))
-        else:
+        if not sent:
             log.warning(f"Failed to notify {mask_phone(user['phone'])}")
+            continue
+        if unsub_keys:
+            notified.append((user["phone"], unsub_keys))
 
     # Unsubscribe notified users from the products they were alerted about
     if notified:

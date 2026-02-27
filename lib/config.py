@@ -53,6 +53,9 @@ _raw_amazon_interval = int(os.environ.get("AMAZON_CHECK_INTERVAL", 1200))
 SOYLENT_CHECK_INTERVAL = 0 if _raw_soylent_interval <= 0 else max(_raw_soylent_interval, 10)
 AMAZON_CHECK_INTERVAL = 0 if _raw_amazon_interval <= 0 else max(_raw_amazon_interval, 10)
 
+# ── Notifications ──
+UNSUB_STOCK_THRESHOLD = int(os.environ.get("UNSUB_STOCK_THRESHOLD", 100))
+
 # ── SMS Stats ──
 SMS_STATS_FILE = Path(os.environ.get("SMS_STATS_FILE", str(PROJECT_ROOT / "sms_stats.json")))
 

@@ -45,17 +45,6 @@
   </div>
   {% endif %}
 
-  {% if prepaid %}
-  <div class="products-section">
-    <h2 class="section-label">Prepaid Plans</h2>
-    <div class="card-list">
-      {% for p in prepaid %}
-        {% include "partials/product_card.html" %}
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-
   {% if accessories %}
   <div class="products-section">
     <h2 class="section-label">Accessories</h2>
@@ -63,6 +52,22 @@
       {% for p in accessories %}
         {% include "partials/product_card.html" %}
       {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if prepaid %}
+  <div class="products-section" x-data="{ open: false }">
+    <button class="admin-accordion-toggle" @click="open = !open" :aria-expanded="open" aria-label="Toggle unlisted products">
+      <span class="section-label section-label--inline">Unlisted Products</span>
+      <svg class="admin-accordion-icon" :class="{ 'admin-accordion-icon--open': open }" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div x-show="open" x-cloak x-transition.duration.200ms>
+      <div class="card-list">
+        {% for p in prepaid %}
+          {% include "partials/product_card.html" %}
+        {% endfor %}
+      </div>
     </div>
   </div>
   {% endif %}

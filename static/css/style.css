@@ -754,6 +754,9 @@ a.source-badge.amazon:hover {
   text-decoration: underline;
 }
 
+.buy-link--muted { color: var(--text-secondary); }
+.card-row:hover .buy-link--muted { color: var(--accent); }
+
 /* ── HTMX loading ── */
 
 .htmx-request .check-btn,
@@ -1590,7 +1593,7 @@ html.dark .admin-badge { background: var(--surface-hover); }
   gap: 6px;
   background: none;
   border: none;
-  padding: 0;
+  padding: 8px 4px;
   cursor: pointer;
   width: 100%;
   margin-bottom: 10px;
@@ -1599,7 +1602,7 @@ html.dark .admin-badge { background: var(--surface-hover); }
 .section-label--inline { margin-bottom: 0; }
 
 .admin-accordion-icon {
-  color: var(--text-secondary);
+  color: var(--accent);
   transition: transform 200ms var(--ease-out);
   flex-shrink: 0;
 }

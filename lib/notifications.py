@@ -26,7 +26,7 @@ from .config import (
 )
 from .file_lock import locked_json, read_json
 from .helpers import mask_phone, product_url
-from .registry import sms_name
+from .registry import classify, sms_name
 
 log = logging.getLogger(__name__)
 
@@ -201,7 +201,12 @@ def notify_changes(changes: list[dict], users: list[dict]) -> None:
     products stay subscribed so the user gets re-notified if the product
     flickers (goes OOS and comes back).
     """
-    restocked = [c for c in changes if c["available"]]
+    restocked = [
+        c for c in changes
+        if c["available"]
+        and classify(c["key"], c.get("product_type", "")) != "prepaid"
+        and "prepaid" not in c.get("title", "").lower()
+    ]
     if not restocked:
         return
 

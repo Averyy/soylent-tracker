@@ -57,7 +57,7 @@ from lib.helpers import format_phone, mask_phone, normalize_phone, product_url, 
 from lib.history import load_history
 from lib.notifications import send_sms, format_notification, get_sms_stats
 from lib.products import build_products
-from lib.registry import display_name, is_hidden
+from lib.registry import classify, display_name, is_hidden
 from lib.state import load_state
 from lib.scheduler import start_checkers, stop_checkers
 from lib.users import find_user, load_users, locked_users
@@ -443,6 +443,13 @@ def toggle_subscription(
     state = load_state()
     if product_key not in state:
         return Response("Unknown product", status_code=400)
+
+    # Unlisted (prepaid/subscription) products are not subscribable
+    product_info = state[product_key]
+    product_type = product_info.get("product_type", "")
+    title = product_info.get("title", "")
+    if classify(product_key, product_type) == "prepaid" or "prepaid" in title.lower():
+        return Response("Subscriptions not available for this product", status_code=400)
 
     subscribed = False
     sub_count = 0

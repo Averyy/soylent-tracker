@@ -42,16 +42,21 @@
     "sms_name": "Soylent powder (starter pack)"
   },
   "amazon-ca:B08V6JFZSR": {
-    "name": "Soylent Complete Nutrition Shake - Mocha",
-    "sms_name": "Soylent drink (mocha)"
-  },
-  "amazon-ca:B09MYG2KLY": {
-    "name": "Soylent Complete Nutrition Shake - Creamy Chocolate",
+    "name": "Soylent Complete Nutrition Shake - Chocolate",
     "sms_name": "Soylent drink (chocolate)"
   },
-  "amazon-ca:B08V6JH4SL": {
+  "amazon-ca:B09MYG2KLY": {
     "name": "Soylent Complete Nutrition Shake - Strawberry",
     "sms_name": "Soylent drink (strawberry)"
+  },
+  "amazon-ca:B08V6JH4SL": {
+    "name": "Soylent Complete Nutrition Shake - Cafe Mocha",
+    "sms_name": "Soylent drink (cafe mocha)"
+  },
+  "amazon-ca:B099BHQD9M": {
+    "name": "Soylent Complete Nutrition Powder - Chocolate",
+    "category": "powder",
+    "sms_name": "Soylent powder (chocolate)"
   },
   "amazon-ca:B0DW68KZX7": {
     "name": "Soylent Complete Nutrition Powder - Original",

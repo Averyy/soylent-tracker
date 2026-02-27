@@ -75,6 +75,7 @@ def build_products(state: dict, subscriptions: set) -> dict[str, list]:
             "subscribed": key in subscriptions,
             "url": product_url(key, info.get("handle")),
             "is_gift_card": product_type == "Gift Card",
+            "no_subscribe": category == "prepaid",
         }
         groups.setdefault(category, []).append(product)
 

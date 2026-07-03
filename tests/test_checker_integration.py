@@ -36,6 +36,9 @@ def _redirect_files(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "SMS_STATS_FILE", sms_stats_file)
     monkeypatch.setattr(notif_mod, "SMS_STATS_FILE", sms_stats_file)
     monkeypatch.setattr(shopify_mod, "ETAG_FILE", str(etag_file))
+    # Reset the periodic-full-check timer so each test's first check forces a
+    # full page pass deterministically (module global persists across tests).
+    monkeypatch.setattr(shopify_mod, "_last_full_check", 0.0)
 
     users_file.write_text("[]")
 
@@ -87,6 +90,49 @@ def _page_html(qty: int) -> bytes:
 
 
 # ── Shopify checker tests ──
+
+@patch("lib.soylent_checker.HttpClient")
+def test_fetch_products_force_full_skips_etag(MockClient, tmp_path):
+    """force_full must drop If-None-Match so the server returns a full 200,
+    re-running page detection; the normal path still sends the ETag."""
+    from lib.soylent_checker import fetch_products, save_etag
+
+    save_etag("etag-abc")
+    client = MockClient.return_value.__enter__.return_value
+    client.fetch.return_value = _shopify_resp([_make_product()])
+
+    fetch_products(client, force_full=True)
+    headers = client.fetch.call_args.kwargs["headers"]
+    assert "If-None-Match" not in headers
+
+    fetch_products(client, force_full=False)
+    headers = client.fetch.call_args.kwargs["headers"]
+    assert headers.get("If-None-Match") == "etag-abc"
+
+
+@patch("lib.soylent_checker.HttpClient")
+@patch("lib.soylent_checker.notify_changes")
+def test_check_products_periodic_full_pass_applies_override(mock_notify, MockClient, tmp_path):
+    """Even with a valid ETag, once the full-check interval elapses the page
+    pass re-runs and applies the waitlist override (the prod ETag-staleness bug)."""
+    import lib.soylent_checker as mod
+    from lib.state import locked_state, load_state
+
+    # Prior state: product shown available (pre-waitlist-feature snapshot)
+    with locked_state() as state:
+        state["shopify-ca:1"] = {"available": True, "title": "Test"}
+
+    client = MockClient.return_value.__enter__.return_value
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
+
+    # Interval already elapsed → force_full → full 200 → page pass detects waitlist
+    mod._last_full_check = 0.0
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (328, True, True)}):
+        check_from = mod.check_products()
+
+    state = load_state()
+    assert state["shopify-ca:1"]["available"] is False
+    assert state["shopify-ca:1"]["waitlisted"] is True
 
 @patch("lib.soylent_checker.HttpClient")
 @patch("lib.soylent_checker.notify_changes")

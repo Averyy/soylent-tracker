@@ -46,6 +46,7 @@
 - Amazon checker uses `HttpClient(rate_limit=5.0, rate_jitter=7.0)` for built-in inter-request delays
 - Soylent checker passes `Accept: application/json` header for Shopify JSON API
 - wafer raises typed exceptions: `ChallengeDetected`, `EmptyResponse`, `WaferError` -- catch these around `client.fetch()` calls
+- **ETag vs page detection:** availability overrides (waitlist, qty<=0) come from product *pages*, but the `products.json` fetch is ETag-conditional and a `304` skips the page pass. So `check_products()` forces a full page pass (bypassing the ETag) every `SOYLENT_FULL_CHECK_INTERVAL` (default 600s) -- do NOT remove this thinking the ETag covers everything, or page-only state changes (a product entering/leaving the subscriber waitlist without a products.json change) go undetected for a long time
 
 ## Conventions
 

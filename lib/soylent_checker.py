@@ -30,6 +30,14 @@ log = logging.getLogger(__name__)
 PRODUCTS_URL = "https://soylent.ca/products.json?limit=250"
 ETAG_FILE = str(SHOPIFY_ETAG_FILE)
 
+# Availability overrides (waitlist, qty<=0) come from PRODUCT PAGES, which the
+# ETag-conditional products.json fetch skips on a 304. Since page state can
+# change without products.json changing, force a full page pass (bypassing the
+# ETag) at least this often so those overrides can't go stale. Set via
+# SOYLENT_FULL_CHECK_INTERVAL (seconds); default 10 min.
+FULL_PAGE_CHECK_INTERVAL = int(os.environ.get("SOYLENT_FULL_CHECK_INTERVAL", 600))
+_last_full_check = 0.0  # monotonic ts of the last full page pass (module-lived)
+
 
 def load_etag() -> str | None:
     """Load saved ETag from previous request."""
@@ -52,8 +60,13 @@ def save_etag(etag: str) -> None:
 _NOT_MODIFIED = "NOT_MODIFIED"
 
 
-def fetch_products(client: HttpClient) -> dict | str | None:
+def fetch_products(client: HttpClient, force_full: bool = False) -> dict | str | None:
     """Fetch products.json with ETag-based conditional request.
+
+    Args:
+        force_full: skip the If-None-Match header so the server returns a full
+            200 (never a 304), forcing the page-detection pass to re-run even
+            when products.json is unchanged.
 
     Returns:
         dict: parsed JSON on 200
@@ -62,7 +75,7 @@ def fetch_products(client: HttpClient) -> dict | str | None:
     """
     extra_headers = {}
     etag = load_etag()
-    if etag:
+    if etag and not force_full:
         extra_headers["If-None-Match"] = etag
 
     try:
@@ -178,10 +191,15 @@ def _batch_fetch_quantities(tasks: list[tuple[int, str, str | None]]) -> dict[in
 
 def check_products() -> list[dict]:
     """Main check loop. Returns list of changes detected."""
+    global _last_full_check
     changes = []
 
     with HttpClient() as client:
-        data = fetch_products(client)
+        # Periodically bypass the ETag so page-derived overrides (waitlist,
+        # qty<=0) get re-detected even while products.json is unchanged.
+        now_ts = time.monotonic()
+        force_full = (now_ts - _last_full_check) >= FULL_PAGE_CHECK_INTERVAL
+        data = fetch_products(client, force_full=force_full)
         if data is _NOT_MODIFIED:
             # Server confirmed our cached data is current — a successful check.
             now = datetime.now(timezone.utc).isoformat()
@@ -192,6 +210,9 @@ def check_products() -> list[dict]:
             return changes
         if data is None:
             return changes
+
+        # Reached full processing (page pass runs below) — reset the timer.
+        _last_full_check = now_ts
 
         products = data.get("products", [])
         log.info(f"Fetched {len(products)} products from soylent.ca")

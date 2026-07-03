@@ -80,7 +80,7 @@ docker compose pull && docker compose up -d   # update
 
 Requires a `.env` with `ADMIN_PHONE`, `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`, and `TWILIO_FROM`.
 
-Checker intervals are configurable via env vars: `SOYLENT_CHECK_INTERVAL` (default 60s) and `AMAZON_CHECK_INTERVAL` (default 1200s). Set to 0 to disable.
+Checker intervals are configurable via env vars: `SOYLENT_CHECK_INTERVAL` (default 60s) and `AMAZON_CHECK_INTERVAL` (default 1200s). Set to 0 to disable. `SOYLENT_FULL_CHECK_INTERVAL` (default 600s) bounds how often the soylent checker bypasses its ETag to re-run product-page detection (waitlist / qty overrides), which the conditional `products.json` fetch would otherwise skip on a 304.
 
 ### Security Hardening
 

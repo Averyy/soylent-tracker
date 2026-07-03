@@ -18,21 +18,35 @@ class HttpClient:
         self,
         rate_limit: float = 0.0,
         rate_jitter: float = 0.0,
+        emulation=None,
+        fingerprint_pool=None,
+        max_rotations: int = 3,
     ):
         # timeout is the TOTAL budget per call in wafer -- it covers rate-limit
         # waits (up to 12s with the Amazon client's rate_limit=5 + jitter=7),
         # retries, and rotations. attempt_timeout caps each individual try so
         # a single hanging attempt can't eat the budget and rotations fire.
-        self._session = wafer.SyncSession(
+        #
+        # emulation/fingerprint_pool pin the TLS identity. Default (None) rides
+        # wafer's newest default (Chrome147). Amazon's WAF keys reputation on
+        # (IP, fingerprint), so the Amazon checker pins an accepted identity --
+        # a bare wafer version bump silently changes the default fingerprint and
+        # can get the VPS's datacenter IP challenged on every request.
+        kwargs = dict(
             timeout=60,
             attempt_timeout=10,
             max_retries=1,
-            max_rotations=3,
+            max_rotations=max_rotations,
             max_failures=None,
             rate_limit=rate_limit,
             rate_jitter=rate_jitter,
             cache_dir=None,
         )
+        if emulation is not None:
+            kwargs["emulation"] = emulation
+        if fingerprint_pool is not None:
+            kwargs["fingerprint_pool"] = fingerprint_pool
+        self._session = wafer.SyncSession(**kwargs)
 
     def fetch(
         self,

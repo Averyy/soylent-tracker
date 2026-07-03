@@ -12,6 +12,7 @@ import random
 import re
 
 import wafer
+from wreq import Emulation
 
 from .config import SOURCE_AMAZON_CA
 from .history import record_changes
@@ -98,9 +99,23 @@ def check_all_asins() -> list[dict]:
     # Randomize order to avoid predictable patterns
     random.shuffle(asin_list)
 
-    # Fetch all results first (slow, network I/O — don't hold lock here)
+    # Fetch all results first (slow, network I/O — don't hold lock here).
+    # Pin the TLS identity: Amazon's WAF keys reputation on (IP, fingerprint),
+    # and wafer's default advances with each version (0.3.0 -> Chrome147), which
+    # got the VPS's datacenter IP challenged. Start on Chrome145 (the identity
+    # the pre-0.3.0 deploy used and Amazon accepted here) and keep a pool to
+    # rotate across on any challenge. max_rotations=6 reaches the full ladder.
     results = []
-    with HttpClient(rate_limit=5.0, rate_jitter=7.0) as client:
+    with HttpClient(
+        rate_limit=5.0,
+        rate_jitter=7.0,
+        emulation=Emulation.Chrome145,
+        fingerprint_pool=[
+            Emulation.Chrome145, Emulation.Chrome147,
+            Emulation.Firefox149, Emulation.Edge147,
+        ],
+        max_rotations=6,
+    ) as client:
         for asin, title in asin_list:
             url = AMAZON_CA_URL.format(asin=asin)
             log.info(f"Checking {asin} ({title})...")

@@ -15,6 +15,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
+import wafer
+
 from .config import SHOPIFY_ETAG_FILE, SOURCE_SHOPIFY_CA
 from .history import record_changes
 from .http_client import HttpClient
@@ -65,6 +67,15 @@ def fetch_products(client: HttpClient) -> dict | str | None:
 
     try:
         result = client.fetch(PRODUCTS_URL, headers={"Accept": "application/json", **extra_headers})
+    except wafer.ChallengeDetected as e:
+        log.warning(f"Shopify products fetch hit {e.challenge_type} challenge")
+        return None
+    except wafer.EmptyResponse:
+        log.warning("Shopify products fetch returned empty response")
+        return None
+    except wafer.WaferError as e:
+        log.error(f"Failed to fetch Shopify products: {type(e).__name__}: {e}")
+        return None
     except Exception as e:
         log.error(f"Failed to fetch Shopify products: {type(e).__name__}: {e}")
         return None
@@ -105,14 +116,30 @@ def _parse_page_qty(html: str) -> int | None:
     return None
 
 
+# Subscriber-only waitlist: the API reports stock, but the page replaces the
+# buy button with an email signup ("due to high demand, we're prioritizing
+# current inventory for our subscribers"). The block is rendered server-side
+# only when the product is in this state — check the theme class and the
+# message text in case either changes.
+_WAITLIST_MARKERS = ('class="alternative-products"', "prioritizing current inventory")
+
+
+def _parse_waitlist(html: str) -> bool:
+    """Detect the subscriber-only waitlist block on a product page."""
+    return any(marker in html for marker in _WAITLIST_MARKERS)
+
+
 _PAGE_QTY_WORKERS = 4
 
 
-def _fetch_qty_task(args: tuple) -> tuple[int, int | None]:
+def _fetch_qty_task(args: tuple) -> tuple[int, int | None, bool, bool]:
     """Thread pool worker: fetch one product page's inventory quantity.
 
     Uses its own HttpClient since wafer SyncSession is not thread-safe.
-    Returns (index, quantity).
+    Returns (index, quantity, waitlisted, fetched). `fetched` is False when the
+    page could not be read (non-200, challenge, timeout) — the caller must NOT
+    treat that as "confirmed not waitlisted"/"confirmed no stock", or a
+    transient failure would clear a real override and fire a spurious change.
     """
     idx, handle, variant_id = args
     time.sleep(random.uniform(0.3, 1.5))
@@ -123,22 +150,29 @@ def _fetch_qty_task(args: tuple) -> tuple[int, int | None]:
                 url += f"?variant={variant_id}"
             result = client.fetch(url)
             if result.status_code != 200:
-                return idx, None
+                log.warning(f"Page fetch for {handle} returned HTTP {result.status_code}")
+                return idx, None, False, False
             html = result.text
-            return idx, _parse_page_qty(html)
+            return idx, _parse_page_qty(html), _parse_waitlist(html), True
+    except wafer.ChallengeDetected as e:
+        log.warning(f"Page fetch for {handle} hit {e.challenge_type} challenge")
+        return idx, None, False, False
+    except wafer.WaferError as e:
+        log.warning(f"Page fetch for {handle} failed: {type(e).__name__}: {e}")
+        return idx, None, False, False
     except Exception as e:
         log.warning(f"Failed to fetch inventory for {handle}: {type(e).__name__}: {e}")
-        return idx, None
+        return idx, None, False, False
 
 
-def _batch_fetch_quantities(tasks: list[tuple[int, str, str | None]]) -> dict[int, int | None]:
-    """Fetch page quantities in parallel. Returns {index: quantity}."""
+def _batch_fetch_quantities(tasks: list[tuple[int, str, str | None]]) -> dict[int, tuple[int | None, bool, bool]]:
+    """Fetch page quantities in parallel. Returns {index: (quantity, waitlisted, fetched)}."""
     if not tasks:
         return {}
     results = {}
     with ThreadPoolExecutor(max_workers=_PAGE_QTY_WORKERS) as pool:
-        for idx, qty in pool.map(_fetch_qty_task, tasks):
-            results[idx] = qty
+        for idx, qty, waitlisted, fetched in pool.map(_fetch_qty_task, tasks):
+            results[idx] = (qty, waitlisted, fetched)
     return results
 
 
@@ -163,7 +197,7 @@ def check_products() -> list[dict]:
         log.info(f"Fetched {len(products)} products from soylent.ca")
 
         # Build product entries, collecting page-qty fetch tasks for parallel execution
-        results = []  # (key, available, title, handle, product_type, inventory_qty, price)
+        results = []  # (key, available, title, handle, product_type, inventory_qty, price, waitlisted)
         qty_tasks = []  # (result_index, handle, variant_id)
         multi_variant_parent_keys = []  # parent keys to remove when expanding into variants
         for product in products:
@@ -189,7 +223,7 @@ def check_products() -> list[dict]:
                     available = v.get("available", False)
                     price = v.get("price")
                     idx = len(results)
-                    results.append([key, available, variant_title, handle, product_type, None, price])
+                    results.append([key, available, variant_title, handle, product_type, None, price, False])
                     if available:
                         qty_tasks.append((idx, handle, str(v["id"])))
                 continue
@@ -206,20 +240,36 @@ def check_products() -> list[dict]:
             # Skip digital products (gift cards) which don't require shipping.
             is_physical = any(v.get("requires_shipping", True) for v in variants)
             idx = len(results)
-            results.append([parent_key, available, title, handle, product_type, None, price])
+            results.append([parent_key, available, title, handle, product_type, None, price, False])
             if available and is_physical:
                 qty_tasks.append((idx, handle, None))
 
         # Fetch page quantities in parallel (slow network I/O)
+        # Keys whose page fetch was attempted but failed: their availability and
+        # waitlist state are UNKNOWN this cycle, so we must fall back to prior
+        # state rather than the raw API (which doesn't know about qty=0 or the
+        # subscriber-only theme gate). Applied under the state lock below.
+        failed_fetch_keys: set[str] = set()
         if qty_tasks:
             log.info(f"Fetching {len(qty_tasks)} page quantities ({_PAGE_QTY_WORKERS} workers)...")
             qty_map = _batch_fetch_quantities(qty_tasks)
-            for idx, inventory_qty in qty_map.items():
+            for idx, (inventory_qty, waitlisted, fetched) in qty_map.items():
+                title = results[idx][2]
+                if not fetched:
+                    # Don't trust the raw API over prior page-derived state on a
+                    # transient failure. Leave the row's API values untouched here;
+                    # prior state is restored in the state-lock loop.
+                    failed_fetch_keys.add(results[idx][0])
+                    continue
                 results[idx][5] = inventory_qty
+                results[idx][7] = waitlisted
                 if inventory_qty is not None and inventory_qty <= 0:
-                    title = results[idx][2]
                     log.info(f"Overriding {title}: API says available but "
                              f"page quantity is {inventory_qty}")
+                    results[idx][1] = False
+                if waitlisted and results[idx][1]:
+                    log.info(f"Overriding {title}: API says available but page "
+                             f"shows subscriber-only waitlist")
                     results[idx][1] = False
 
         # Lock state only for the quick read-modify-write
@@ -237,7 +287,22 @@ def check_products() -> list[dict]:
             for k in stale_variant_keys:
                 state.pop(k, None)
 
-            for key, available, title, handle, product_type, inventory_qty, price in results:
+            for key, available, title, handle, product_type, inventory_qty, price, waitlisted in results:
+                # Page fetch failed this cycle: we have NO reliable new signal for
+                # this product (the raw API "available" is exactly what the page
+                # check exists to verify — it stays True for waitlisted and qty<=0
+                # products). Keep the last determination rather than letting the
+                # API flip an unavailable product back to available and fire a
+                # spurious "back in stock" notification. Real restocks that
+                # coincide with a fetch failure are delayed one cycle, not lost.
+                if key in failed_fetch_keys:
+                    prev = state.get(key)
+                    if prev is not None:
+                        available = prev.get("available", available)
+                        waitlisted = bool(prev.get("waitlisted"))
+                        if inventory_qty is None:
+                            inventory_qty = prev.get("inventory_qty")
+
                 change = update_product(
                     state, key, available,
                     title=title, handle=handle, product_type=product_type,
@@ -250,6 +315,11 @@ def check_products() -> list[dict]:
                         state[key]["inventory_qty"] = inventory_qty
                     else:
                         state[key].pop("inventory_qty", None)
+                    # Waitlisted: stock exists but is reserved for subscribers
+                    if waitlisted:
+                        state[key]["waitlisted"] = True
+                    else:
+                        state[key].pop("waitlisted", None)
 
                 if change:
                     if inventory_qty is not None and inventory_qty > 0:

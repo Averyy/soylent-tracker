@@ -19,7 +19,12 @@ Same approach as Canada. `GET soylent.com/products.json?limit=250` returns 78 pr
 | Shopify domain | soylent-prod.myshopify.com |
 | Products | 78 |
 
-Endpoint, caching, rate limits, and inventoryQty extraction all work identically to soylent.ca.
+Endpoint, caching, and rate limits work identically to soylent.ca. Inventory extraction differs slightly:
+
+- **soylent.ca** has both `gsf_conversion_data` (third-party conversion tracking app) and `inventoryQty` (Shopify-native) — they report the same numbers
+- **soylent.com** only has `inventoryQty` — no `gsf_conversion_data`
+
+The existing `_parse_page_qty` parser already handles this (checks gsf first, falls back to inventoryQty), so no code changes needed.
 
 ### Amazon.com ASINs - Complete Meal RTD
 

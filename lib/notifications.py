@@ -190,7 +190,7 @@ def format_notification(restocked: list[dict], unsub_keys: set[str] | None = Non
 
     footer = _footer(restocked, unsub_keys)
     product_list = "\n".join(lines)
-    return f"Back in stock:\n\n{product_list}\n\n{TRACKER_URL}\n\n{footer}"
+    return f"Back in stock:\n{product_list}\n\n{TRACKER_URL}\n\n{footer}"
 
 
 def notify_changes(changes: list[dict], users: list[dict]) -> None:

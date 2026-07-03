@@ -106,7 +106,9 @@ def check_all_asins() -> list[dict]:
             log.info(f"Checking {asin} ({title})...")
 
             try:
-                result = client.fetch(url, timeout=20.0)
+                # No explicit timeout: the session's 60s total budget must
+                # absorb the rate-limit wait (up to 12s) plus bounded attempts.
+                result = client.fetch(url)
             except wafer.ChallengeDetected as e:
                 log.warning(f"{asin} hit unsolvable {e.challenge_type} challenge")
                 continue

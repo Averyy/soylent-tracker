@@ -13,6 +13,9 @@ services:
     image: ghcr.io/averyy/soylent-tracker:latest
     container_name: soylent-tracker-web
     restart: unless-stopped
+    # Above the app's own 30s graceful-checker-shutdown budget (app.py lifespan);
+    # Docker's 10s default would SIGKILL mid-check before that path can run.
+    stop_grace_period: 40s
     ports:
       - "127.0.0.1:8745:8745"
     networks:

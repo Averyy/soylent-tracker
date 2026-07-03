@@ -263,6 +263,20 @@ def test_build_products_marks_subscribed():
     assert drink["subscribed"] is True
 
 
+def test_build_products_waitlisted_status_label():
+    from lib.products import build_products
+    state = {
+        "shopify-ca:1": {"available": False, "waitlisted": True, "inventory_qty": 328,
+                         "title": "Test Powder", "product_type": "Powder", "handle": "test-powder",
+                         "last_checked": "2026-01-01T00:00:00+00:00"},
+    }
+    powder = build_products(state, set())["powder"][0]
+    assert powder["status_label"] == "Subscribers Only"
+    assert powder["available"] is False
+    # Reserved stock still shown
+    assert powder["detail"] == "328 units"
+
+
 def test_sort_in_stock_before_out_of_stock():
     from lib.products import _sort_product_list
     products = [
@@ -465,22 +479,80 @@ def test_rate_limiter_forwarded_for_only_trusted(client):
 
     rate_limiter.clear()
 
-    # From reverse proxy (127.0.0.1) — trusts X-Forwarded-For
+    # From reverse proxy (127.0.0.1): the RIGHTMOST untrusted entry is the real
+    # client (the hop our proxy appended); leftmost entries are client-forgeable.
     req = MagicMock()
     req.client.host = "127.0.0.1"
     req.headers = {"x-forwarded-for": "5.6.7.8, 10.0.0.1"}
     check_rate_limit(req)
-    assert "ip:5.6.7.8" in rate_limiter
+    assert "ip:10.0.0.1" in rate_limiter
+    assert "ip:5.6.7.8" not in rate_limiter  # spoofable leftmost, not trusted
 
     rate_limiter.clear()
 
-    # From direct client (not proxy) — ignores X-Forwarded-For
+    # From direct client (not proxy) — ignores X-Forwarded-For entirely
     req2 = MagicMock()
     req2.client.host = "9.9.9.9"
     req2.headers = {"x-forwarded-for": "spoofed.ip"}
     check_rate_limit(req2)
     assert "ip:9.9.9.9" in rate_limiter
     assert "ip:spoofed.ip" not in rate_limiter
+
+
+def test_get_client_ip_rejects_spoofed_loopback():
+    """An attacker prepending X-Forwarded-For can't impersonate a trusted IP."""
+    from lib.auth import get_client_ip
+    from unittest.mock import MagicMock
+
+    # Behind the bridge proxy, attacker prepends 127.0.0.1; the proxy appends the
+    # real client (8.8.8.8). Rightmost-untrusted must return the real client.
+    req = MagicMock()
+    req.client.host = "172.18.0.5"
+    req.headers = {"x-forwarded-for": "127.0.0.1, 8.8.8.8"}
+    assert get_client_ip(req) == "8.8.8.8"
+
+    # All entries trusted-looking → fall back to the direct peer, never a
+    # forged leftmost value.
+    req2 = MagicMock()
+    req2.client.host = "172.18.0.5"
+    req2.headers = {"x-forwarded-for": "127.0.0.1, 172.16.0.9"}
+    assert get_client_ip(req2) == "172.18.0.5"
+
+
+def test_ban_middleware_never_bans_trusted_proxy():
+    """Honeypot probe that resolves to a trusted-proxy IP must not ban it
+    (a spoofed XFF must not let an attacker ban the proxy/loopback = site DoS)."""
+    import asyncio
+    from unittest.mock import MagicMock
+    from starlette.responses import Response as StarletteResponse
+    import app as app_mod
+    from lib.auth import _is_trusted_proxy
+
+    app_mod._banned_ips.clear()
+
+    async def call_next(req):
+        return StarletteResponse(status_code=200)
+
+    # Attacker behind the bridge prepends XFF so it resolves (all-trusted) to the
+    # bridge peer. Honeypot still returns 403, but the trusted IP must NOT be banned.
+    req = MagicMock()
+    req.client.host = "172.18.0.5"
+    req.headers = {"x-forwarded-for": "127.0.0.1"}
+    req.url.path = "/.env"
+    resp = asyncio.run(app_mod.ban_middleware(req, call_next))
+    assert resp.status_code == 403
+    assert not any(_is_trusted_proxy(ip) for ip in app_mod._banned_ips)
+
+    # A normal external probe IS still banned (behavior preserved).
+    req2 = MagicMock()
+    req2.client.host = "203.0.113.7"
+    req2.headers = {}
+    req2.url.path = "/wp-admin"
+    resp2 = asyncio.run(app_mod.ban_middleware(req2, call_next))
+    assert resp2.status_code == 403
+    assert "203.0.113.7" in app_mod._banned_ips
+
+    app_mod._banned_ips.clear()
 
 
 def test_rate_limiter_window_expiry(client):
@@ -543,6 +615,24 @@ def test_health_endpoint(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+def test_health_checkers_healthy_200(client):
+    from unittest.mock import patch
+    report = {"healthy": True, "checkers": {"soylent": {"enabled": True, "stale": False}}}
+    with patch("app.checker_health", return_value=report):
+        r = client.get("/health/checkers")
+    assert r.status_code == 200
+    assert r.json()["healthy"] is True
+
+
+def test_health_checkers_stale_503(client):
+    from unittest.mock import patch
+    report = {"healthy": False, "checkers": {"soylent": {"enabled": True, "stale": True}}}
+    with patch("app.checker_health", return_value=report):
+        r = client.get("/health/checkers")
+    assert r.status_code == 503
+    assert r.json()["healthy"] is False
 
 
 def test_buy_page_renders(client):

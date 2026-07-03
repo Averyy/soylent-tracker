@@ -22,17 +22,48 @@ log = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 
 def _load_or_create_session_secret() -> str:
-    """Load session secret from file, or generate and persist one."""
+    """Load session secret from file, or generate and persist one.
+
+    Uses O_CREAT|O_EXCL so that if two processes race on a fresh volume (e.g. an
+    overlapping old/new container during deploy), the loser reads the winner's
+    secret instead of clobbering it — clobbering would invalidate every live
+    session signed with the other secret.
+    """
     env_secret = os.environ.get("SESSION_SECRET")
     if env_secret:
         return env_secret
-    if config.SESSION_SECRET_FILE.exists():
-        return config.SESSION_SECRET_FILE.read_text().strip()
+
+    path = config.SESSION_SECRET_FILE
+    existing = _read_secret_file(path)
+    if existing:
+        return existing
+
     secret = secrets.token_hex(32)
-    config.SESSION_SECRET_FILE.write_text(secret)
-    config.SESSION_SECRET_FILE.chmod(0o600)
+    try:
+        fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        # Another process created it first — use theirs.
+        return _read_secret_file(path) or secret
+    try:
+        os.write(fd, secret.encode())
+    finally:
+        os.close(fd)
     log.info("Generated new session secret")
     return secret
+
+
+def _read_secret_file(path) -> str:
+    """Read and strip the secret file, retrying briefly if it's momentarily
+    empty (created by a racing process that hasn't written yet)."""
+    for _ in range(10):
+        try:
+            content = path.read_text().strip()
+        except FileNotFoundError:
+            return ""
+        if content:
+            return content
+        time.sleep(0.01)
+    return ""
 
 
 SESSION_SECRET = _load_or_create_session_secret()
@@ -118,12 +149,28 @@ def _is_trusted_proxy(ip: str) -> bool:
 
 
 def get_client_ip(request: Request) -> str:
-    """Get the real client IP. Trusts X-Forwarded-For from local and Docker proxies."""
+    """Get the real client IP, resistant to X-Forwarded-For spoofing.
+
+    Only consults XFF when the direct peer is a trusted proxy (localhost / Docker
+    bridge). Our proxy (Caddy) APPENDS the hop it observed to XFF, so the
+    RIGHTMOST entry is the one it actually saw; anything further left is
+    client-supplied and forgeable. Walk from the right, skip trusted-proxy hops,
+    and return the first untrusted address — the real client. Taking the leftmost
+    entry instead let an attacker spoof a trusted/loopback IP (which the ban
+    middleware and rate limiter key on) to DoS the site or bypass per-IP limits.
+    """
     direct_ip = request.client.host if request.client else "unknown"
-    if _is_trusted_proxy(direct_ip):
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+    if not _is_trusted_proxy(direct_ip):
+        return direct_ip
+    forwarded = request.headers.get("x-forwarded-for")
+    if not forwarded:
+        return direct_ip
+    parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+    for ip in reversed(parts):
+        if not _is_trusted_proxy(ip):
+            return ip
+    # Every hop claims to be a trusted proxy — can't identify a client; fall back
+    # to the direct peer rather than trusting a forgeable leftmost entry.
     return direct_ip
 
 

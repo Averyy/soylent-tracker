@@ -24,7 +24,9 @@ def build_products(state: dict, subscriptions: set) -> dict[str, list]:
         status_text_raw = info.get("status_text", "")
 
         # Status label for the badge
-        if not available and status_text_raw:
+        if not available and info.get("waitlisted"):
+            status_label = "Subscribers Only"
+        elif not available and status_text_raw:
             status_label = "Unavailable"
         elif available:
             status_label = "In Stock"

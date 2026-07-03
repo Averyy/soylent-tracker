@@ -104,7 +104,7 @@ def test_shopify_detects_new_available_product(mock_notify, MockClient, tmp_path
     ]
 
     # Mock the batch fetch to return a quantity
-    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 50}):
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (50, False, True)}):
         changes = check_products()
 
     assert len(changes) == 1
@@ -188,11 +188,113 @@ def test_shopify_page_qty_override(mock_notify, MockClient, tmp_path):
     client.fetch.return_value = _shopify_resp([_make_product(available=True)])
 
     # Page says qty is 0
-    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 0}):
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (0, False, True)}):
         changes = check_products()
 
     state = load_state()
     # Should be marked unavailable despite API saying available
+    assert state["shopify-ca:1"]["available"] is False
+
+
+@patch("lib.soylent_checker.HttpClient")
+@patch("lib.soylent_checker.notify_changes")
+def test_shopify_waitlist_override(mock_notify, MockClient, tmp_path):
+    """Product with stock but subscriber-only waitlist is marked unavailable."""
+    from lib.soylent_checker import check_products
+    from lib.state import load_state
+
+    client = MockClient.return_value.__enter__.return_value
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
+
+    # Page has stock but shows the subscriber-only waitlist block
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (328, True, True)}):
+        changes = check_products()
+
+    state = load_state()
+    assert state["shopify-ca:1"]["available"] is False
+    assert state["shopify-ca:1"]["waitlisted"] is True
+    # Reserved stock is still recorded for display
+    assert state["shopify-ca:1"]["inventory_qty"] == 328
+
+
+@patch("lib.soylent_checker.HttpClient")
+@patch("lib.soylent_checker.notify_changes")
+def test_shopify_waitlist_cleared_on_restock(mock_notify, MockClient, tmp_path):
+    """Waitlist flag clears and restock change fires when the buy button returns."""
+    from lib.soylent_checker import check_products
+    from lib.state import locked_state, load_state
+
+    # Seed state: previously waitlisted
+    with locked_state() as state:
+        state["shopify-ca:1"] = {"available": False, "waitlisted": True,
+                                 "title": "Test", "inventory_qty": 328}
+
+    client = MockClient.return_value.__enter__.return_value
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
+
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (300, False, True)}):
+        changes = check_products()
+
+    assert len(changes) == 1
+    assert changes[0]["available"] is True
+
+    state = load_state()
+    assert state["shopify-ca:1"]["available"] is True
+    assert "waitlisted" not in state["shopify-ca:1"]
+
+
+@patch("lib.soylent_checker.HttpClient")
+@patch("lib.soylent_checker.notify_changes")
+def test_shopify_waitlist_preserved_on_fetch_failure(mock_notify, MockClient, tmp_path):
+    """A transient page-fetch failure must NOT clear a waitlist flag or fire a
+    spurious 'back in stock' change (fetched=False → preserve prior state)."""
+    from lib.soylent_checker import check_products
+    from lib.state import locked_state, load_state
+
+    # Seed state: product is currently waitlisted (available False, has qty)
+    with locked_state() as state:
+        state["shopify-ca:1"] = {"available": False, "waitlisted": True,
+                                 "title": "Test", "inventory_qty": 328}
+
+    client = MockClient.return_value.__enter__.return_value
+    # API still reports available=True (it doesn't know about the theme gate)
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
+
+    # Page fetch FAILED this cycle: (qty=None, waitlisted=False, fetched=False)
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (None, False, False)}):
+        changes = check_products()
+
+    # No spurious change/notification
+    assert changes == []
+    state = load_state()
+    # Prior waitlist override preserved, not flipped to available
+    assert state["shopify-ca:1"]["available"] is False
+    assert state["shopify-ca:1"]["waitlisted"] is True
+    assert state["shopify-ca:1"]["inventory_qty"] == 328
+
+
+@patch("lib.soylent_checker.HttpClient")
+@patch("lib.soylent_checker.notify_changes")
+def test_shopify_qty_override_preserved_on_fetch_failure(mock_notify, MockClient, tmp_path):
+    """Same flap guard for the qty<=0 override: a product held unavailable by a
+    prior page-qty override must not flip to available on a transient fetch
+    failure (the API keeps reporting available)."""
+    from lib.soylent_checker import check_products
+    from lib.state import locked_state, load_state
+
+    # Seed state: previously held unavailable by qty<=0 override (no waitlist flag)
+    with locked_state() as state:
+        state["shopify-ca:1"] = {"available": False, "title": "Test"}
+
+    client = MockClient.return_value.__enter__.return_value
+    client.fetch.return_value = _shopify_resp([_make_product(available=True)])
+
+    # Page fetch FAILED this cycle
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (None, False, False)}):
+        changes = check_products()
+
+    assert changes == []
+    state = load_state()
     assert state["shopify-ca:1"]["available"] is False
 
 
@@ -212,7 +314,7 @@ def test_shopify_stale_variants_cleaned(mock_notify, MockClient, tmp_path):
     client = MockClient.return_value.__enter__.return_value
     client.fetch.return_value = _shopify_resp([_make_product()])
 
-    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 50}):
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (50, False, True)}):
         check_products()
 
     state = load_state()
@@ -232,7 +334,7 @@ def test_shopify_history_recorded(mock_notify, MockClient, tmp_path):
     client = MockClient.return_value.__enter__.return_value
     client.fetch.return_value = _shopify_resp([_make_product()])
 
-    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: 50}):
+    with patch("lib.soylent_checker._batch_fetch_quantities", return_value={0: (50, False, True)}):
         check_products()
 
     history = load_history()

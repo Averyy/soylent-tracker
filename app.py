@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -42,6 +42,7 @@ from lib.auth import (
     check_rate_limit,
     get_admin_csrf,
     get_client_ip,
+    _is_trusted_proxy,
     get_csrf_token,
     get_session_phone,
     is_admin,
@@ -59,7 +60,7 @@ from lib.notifications import send_sms, format_notification, get_sms_stats
 from lib.products import build_products
 from lib.registry import classify, display_name, is_hidden
 from lib.state import load_state
-from lib.scheduler import start_checkers, stop_checkers
+from lib.scheduler import start_checkers, stop_checkers, checker_health
 from lib.users import find_user, load_users, locked_users
 
 # ──────────────────────────────────────────────
@@ -157,9 +158,13 @@ async def ban_middleware(request: Request, call_next):
         return Response(status_code=403)
     path = request.url.path.rstrip("/").lower()
     if path.startswith(_HONEYPOT_PATHS):
-        if len(_banned_ips) < _BAN_CAP:
+        # Never ban a trusted-proxy / loopback IP: banning the reverse proxy or
+        # the healthcheck's loopback would take the whole site down. Combined
+        # with get_client_ip's spoof-resistant parsing, this makes the honeypot
+        # un-weaponizable against infra even if IP resolution ever falls back.
+        if not _is_trusted_proxy(client_ip) and len(_banned_ips) < _BAN_CAP:
             _banned_ips.add(client_ip)
-        log.warning(f"Banned {client_ip} (probed {request.url.path!r})")
+            log.warning(f"Banned {client_ip} (probed {request.url.path!r})")
         return Response(status_code=403)
     return await call_next(request)
 
@@ -167,6 +172,15 @@ async def ban_middleware(request: Request, call_next):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/health/checkers")
+def health_checkers():
+    """Checker-freshness readiness probe for external monitoring. 503 when a
+    background checker has silently stalled. Separate from /health (the Docker
+    liveness probe) so an upstream outage never restarts the web process."""
+    report = checker_health()
+    return JSONResponse(report, status_code=200 if report["healthy"] else 503)
 
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")

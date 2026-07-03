@@ -53,7 +53,8 @@ static/
 | POST | `/admin/rename-user` | Rename user (HTMX) |
 | POST | `/admin/test-sms` | Send test SMS to admin |
 | POST | `/admin/test-notify` | Send test notification to admin |
-| GET | `/health` | Health check |
+| GET | `/health` | Liveness check (static 200) |
+| GET | `/health/checkers` | Checker-freshness readiness probe (503 if a checker has stalled) |
 
 ## Commands
 

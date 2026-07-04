@@ -64,12 +64,15 @@ The heart of the fun -- each flavor gets its own color, used throughout:
 
 Full-viewport animated wallpaper of Soylent bottle silhouettes. Bottles are arranged in a jittered hex grid, randomly appearing and disappearing with spring-bounce animations. Renders on every page behind all content.
 
+**Rendering**: a fixed full-viewport `<canvas>` (`.wallpaper-canvas`), drawn by `static/js/wallpaper.js`. Each flavor bottle is pre-rasterized once into a small sprite bitmap at device resolution; frames are sprite blits, drawn only while an animation is running. Do NOT convert this back to animated SVG DOM — Chrome and Firefox cannot GPU-composite transform/opacity animations on SVG child elements, so the old SVG version forced a main-thread repaint of the whole viewport every frame (visibly janky; Safari was fine). Bottle shapes stay authored as SVG path data inside `wallpaper.js` and are rendered via `Path2D`.
+
 #### Visual Style
 
 - Bottles use the **flavor light shade colors** as label fills (see palette above), with subtle gray outlines (`#DCDEE0` light / `#333340` dark) and gray caps (`#D0D1D2` light / `#303038` dark)
 - Animation feel: bottles **shrink to nothing** (fast, 600ms) and **spring back** with a bouncy overshoot (organic, playful)
-- Bottles randomly cycle — a few disappear each tick, hidden ones pop back with 60% chance
+- Bottles randomly cycle — a few disappear each tick while an equal number reappear at **random vacant grid slots**. A standing vacancy pool (~6% of slots, scales with batch size) keeps additions from refilling the spot just vacated; reappearing bottles re-roll flavor/size/rotation so returns read as new bottles
 - Dark mode: bottles instantly recolor to dark palette (muted, darker fills)
+- Reduced motion (`prefers-reduced-motion`): a complete static field — no churn, and the vacancy pool is NOT seeded (seeded gaps would be permanent since the refill loop never runs)
 
 #### Wallpaper Controls Panel
 

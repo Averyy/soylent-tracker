@@ -1,13 +1,24 @@
 /**
  * Soylent Wallpaper Engine
  *
- * Renders animated Soylent bottle silhouettes across a full-viewport SVG.
- * Bottles randomly disappear and reappear with spring-bounce animations.
+ * Renders animated Soylent bottle silhouettes across a full-viewport
+ * 2D canvas. Bottles randomly disappear and reappear with spring-bounce
+ * animations.
  *
- * Depends on: anime.js v4 (global `anime` object)
+ * Rendering: each flavor is pre-rasterized once into a small sprite
+ * bitmap (at device resolution, supersampled 2x), and every frame is a
+ * clear + drawImage pass. The previous implementation animated inline
+ * styles on SVG child elements, which Chrome and Firefox cannot
+ * GPU-composite — every frame forced a main-thread repaint of the whole
+ * full-viewport vector layer. Canvas sprite blits keep the per-frame
+ * cost trivial in all browsers. Frames are only drawn while an
+ * animation is actually running (render-on-demand, no idle rAF loop).
+ *
+ * Depends on: anime.js v4 (global `anime` object) — drives the numeric
+ * tweens on plain JS bottle objects.
  *
  * Usage:
- *   var ctrl = SoylentWallpaper.init(svgElement, options?)
+ *   var ctrl = SoylentWallpaper.init(canvasElement, options?)
  *   ctrl.set(key, value)   // live parameter update
  *   ctrl.regenerate()      // rebuild grid
  *   ctrl.destroy()         // clean teardown
@@ -15,8 +26,6 @@
  */
 (function() {
   'use strict';
-
-  var SVG_NS = 'http://www.w3.org/2000/svg';
 
   // ── Flavor palettes (light + dark) ──────────────────────
 
@@ -47,6 +56,54 @@
     body:  'M-4.5,-20 L-5.1,-16.9 C-7,-10 -8.5,-5 -8.5,-1.3 L-8.6,21.9 C-8.6,24 -7,25 -5.3,25 L3.9,25 C7,25 8.6,24 8.6,21.2 L8.4,1.2 C8.4,-5 7,-10 4.7,-16.6 L4.2,-20',
     cap:   'M-3.9,-25 Q-5.6,-25 -5.6,-23.8 L-5.7,-18.1 L-5.1,-16.9 L4.7,-16.6 L5.2,-18.4 L5,-24 Q5,-25 2.4,-24.9 Z',
   };
+
+  // ── Sprite geometry ─────────────────────────────────────
+  //
+  // Bottle local coords span x[-9.1, 9.1], y[-25, 25.5] including the
+  // 1px body stroke. Sprites pad that to a 20x52 unit box with the
+  // bottle's local origin (its transform anchor) at (10, 26).
+  // SUPERSAMPLE renders sprites at 2x device resolution so rotated /
+  // spring-overshoot-scaled draws stay crisp.
+
+  var SPRITE_W = 20, SPRITE_H = 52;
+  var SPRITE_AX = 10, SPRITE_AY = 26;
+  var SUPERSAMPLE = 2;
+
+  var PATH2D = null; // lazily-built Path2D cache (shared across inits)
+
+  function buildSprites(isDark, dpr) {
+    if (!PATH2D) {
+      PATH2D = {
+        label: new Path2D(PATHS.label),
+        body: new Path2D(PATHS.body),
+        cap: new Path2D(PATHS.cap),
+      };
+    }
+    var u = dpr * SUPERSAMPLE; // sprite px per bottle unit
+    var palettes = isDark ? PALETTES.dark : PALETTES.light;
+    var bg = isDark ? BG.dark : BG.light;
+    var sprites = [];
+    for (var i = 0; i < palettes.length; i++) {
+      var p = palettes[i];
+      var c = document.createElement('canvas');
+      c.width = Math.ceil(SPRITE_W * u);
+      c.height = Math.ceil(SPRITE_H * u);
+      var sctx = c.getContext('2d');
+      sctx.setTransform(u, 0, 0, u, SPRITE_AX * u, SPRITE_AY * u);
+      // Same paint order as the old SVG bottle group:
+      sctx.fillStyle = bg;          // 1. bg occlusion (solid silhouette)
+      sctx.fill(PATH2D.body);
+      sctx.fillStyle = p.label;     // 2. colored label
+      sctx.fill(PATH2D.label);
+      sctx.strokeStyle = p.body;    // 3. outline on top
+      sctx.lineWidth = 1;
+      sctx.stroke(PATH2D.body);
+      sctx.fillStyle = p.cap;       // 4. cap on top
+      sctx.fill(PATH2D.cap);
+      sprites.push(c);
+    }
+    return sprites;
+  }
 
   // ── Tunable defaults ────────────────────────────────────
 
@@ -84,75 +141,6 @@
     return points;
   }
 
-  // ── Bottle factory ──────────────────────────────────────
-
-  function createBottle(svg, x, y, flavorIdx, isDark, baseScale, rotation) {
-    var palette = isDark ? PALETTES.dark[flavorIdx] : PALETTES.light[flavorIdx];
-
-    var outer = document.createElementNS(SVG_NS, 'g');
-    outer.setAttribute('transform',
-      'translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ') ' +
-      'rotate(' + rotation.toFixed(1) + ') ' +
-      'scale(' + baseScale.toFixed(3) + ')'
-    );
-
-    // Inner group: animated via CSS opacity + transform (no SVG transform conflict)
-    var inner = document.createElementNS(SVG_NS, 'g');
-    inner.style.transformOrigin = '0px 0px';
-
-    // Solid silhouette (bg color fill, no stroke) — occludes bottles behind
-    var bodyFill = document.createElementNS(SVG_NS, 'path');
-    bodyFill.setAttribute('d', PATHS.body);
-    bodyFill.setAttribute('fill', isDark ? BG.dark : BG.light);
-
-    var label = document.createElementNS(SVG_NS, 'path');
-    label.setAttribute('d', PATHS.label);
-    label.setAttribute('fill', palette.label);
-
-    // Outline only (no fill) — draws on top of the label
-    var body = document.createElementNS(SVG_NS, 'path');
-    body.setAttribute('d', PATHS.body);
-    body.setAttribute('fill', 'none');
-    body.setAttribute('stroke', palette.body);
-    body.setAttribute('stroke-width', '1');
-
-    var cap = document.createElementNS(SVG_NS, 'path');
-    cap.setAttribute('d', PATHS.cap);
-    cap.setAttribute('fill', palette.cap);
-
-    inner.appendChild(bodyFill);  // 1. bg occlusion
-    inner.appendChild(label);     // 2. colored label
-    inner.appendChild(body);      // 3. outline on top
-    inner.appendChild(cap);       // 4. cap on top
-    outer.appendChild(inner);
-    svg.appendChild(outer);
-
-    return {
-      outer: outer,
-      inner: inner,
-      bodyFill: bodyFill,
-      label: label,
-      body: body,
-      cap: cap,
-      flavorIdx: flavorIdx,
-      hidden: false,
-    };
-  }
-
-  // ── Recolor all bottles (dark mode switch) ──────────────
-
-  function recolorBottles(bottles, isDark) {
-    var bgFill = isDark ? BG.dark : BG.light;
-    for (var i = 0; i < bottles.length; i++) {
-      var b = bottles[i];
-      var p = isDark ? PALETTES.dark[b.flavorIdx] : PALETTES.light[b.flavorIdx];
-      b.bodyFill.setAttribute('fill', bgFill);
-      b.label.setAttribute('fill', p.label);
-      b.body.setAttribute('stroke', p.body);
-      b.cap.setAttribute('fill', p.cap);
-    }
-  }
-
   // ── Fisher-Yates shuffle ────────────────────────────────
 
   function shuffle(arr) {
@@ -164,13 +152,22 @@
 
   // ── Main init ───────────────────────────────────────────
 
-  function init(svgEl, userOpts) {
+  function init(canvasEl, userOpts) {
+    // One engine per canvas: a second init() (e.g. a stray double call
+    // from the page) must not leave two engines alternately clearing
+    // and redrawing different grids on the same context.
+    if (canvasEl._soylentWallpaper) canvasEl._soylentWallpaper.destroy();
+
     var opts = {};
     var key;
     for (key in DEFAULTS) opts[key] = DEFAULTS[key];
     if (userOpts) for (key in userOpts) opts[key] = userOpts[key];
 
+    var ctx = canvasEl.getContext('2d');
     var bottles = [];
+    var sprites = [];
+    var dpr = 1;
+    var drawQueued = false;
     var intervalId = null;
     var resizeTimer = null;
     var rebuildTimer = null;
@@ -178,25 +175,66 @@
     var destroyed = false;
     var motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     var reducedMotion = motionQuery.matches;
+    var dprQuery = null;
 
     // anime.js v4 spring: takes { mass, stiffness, damping, velocity } object
     var springEase = anime.spring({ mass: 1, stiffness: 80, damping: 10, velocity: 0 });
 
     function getSize() {
-      return { w: svgEl.clientWidth || window.innerWidth, h: svgEl.clientHeight || window.innerHeight };
+      return { w: canvasEl.clientWidth || window.innerWidth, h: canvasEl.clientHeight || window.innerHeight };
+    }
+
+    // ── Render-on-demand draw loop ──
+    //
+    // anime.js tweens plain bottle objects; onUpdate coalesces to at
+    // most one canvas redraw per engine tick via a microtask. The
+    // microtask runs after anime's rAF callback finishes updating ALL
+    // active tweens but within the same rendering frame — drawing with
+    // fresh values and no added latency. (Scheduling our own rAF here
+    // instead would fire one frame late and, interleaved with anime's
+    // persistent rAF, halve the presented frame rate to ~30fps.)
+    // When no animation is running, nothing is drawn at all.
+
+    function requestRender() {
+      if (drawQueued || destroyed) return;
+      drawQueued = true;
+      queueMicrotask(function() {
+        drawQueued = false;
+        if (!destroyed) draw();
+      });
+    }
+
+    function draw() {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+      for (var i = 0; i < bottles.length; i++) {
+        var b = bottles[i];
+        if (b.scale <= 0 || b.opacity <= 0) continue;
+        var s = b.baseScale * b.scale;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.rad);
+        ctx.scale(s, s);
+        // spring ease overshoots past 1; canvas ignores out-of-range alpha
+        ctx.globalAlpha = b.opacity > 1 ? 1 : b.opacity;
+        ctx.drawImage(sprites[b.flavorIdx], -SPRITE_AX, -SPRITE_AY, SPRITE_W, SPRITE_H);
+      }
+      ctx.globalAlpha = 1;
     }
 
     // ── Build bottles ──
 
     function buildBottles() {
-      while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+      dpr = window.devicePixelRatio || 1;
+      var size = getSize();
+      canvasEl.width = Math.round(size.w * dpr);
+      canvasEl.height = Math.round(size.h * dpr);
+      ctx.imageSmoothingQuality = 'high';
+      sprites = buildSprites(isDark, dpr);
       bottles = [];
 
-      var size = getSize();
-      svgEl.setAttribute('viewBox', '0 0 ' + size.w + ' ' + size.h);
-      // Bottles are ~17px wide, ~50px tall. Asymmetric jitter:
-      // X can be generous (bottles are narrow), Y must be tight (bottles are tall).
-      // Overlap ON: equal jitter in both axes, bottles can stack.
+      // Bottles are ~17px wide, ~50px tall. Equal jitter in both axes;
+      // overlap is allowed — bottles can stack (paint order occludes).
       var r = opts.randomness;
       var jitterX = opts.spacing * 0.4 * r;
       var jitterY = opts.spacing * 0.4 * r;
@@ -204,23 +242,68 @@
       shuffle(points);
 
       for (var i = 0; i < points.length; i++) {
-        var flavorIdx = Math.floor(Math.random() * 5);
-        var baseScale = 1 + (Math.random() * 2 - 1) * opts.sizeVariation;
-        var rotation = (Math.random() * 2 - 1) * opts.rotationRange;
-        bottles.push(createBottle(svgEl, points[i].x, points[i].y, flavorIdx, isDark, baseScale, rotation));
+        bottles.push({
+          x: points[i].x,
+          y: points[i].y,
+          rad: (Math.random() * 2 - 1) * opts.rotationRange * Math.PI / 180,
+          baseScale: 1 + (Math.random() * 2 - 1) * opts.sizeVariation,
+          flavorIdx: Math.floor(Math.random() * PALETTES.light.length),
+          hidden: false,
+          scale: 1,
+          opacity: 1,
+        });
       }
+
+      // Seed the standing vacancy pool. Reappearances pick random empty
+      // slots, so some slots must start empty — otherwise every addition
+      // would land exactly where a removal just happened. Bottles are in
+      // shuffled-point order, so the first N form a random subset.
+      // Skipped under reduced motion: the churn loop that refills slots
+      // never runs there, so seeded gaps would be permanent.
+      if (!reducedMotion) {
+        var seed = targetHidden();
+        for (var s = 0; s < seed && s < bottles.length; s++) {
+          bottles[s].hidden = true;
+          bottles[s].scale = 0;
+          bottles[s].opacity = 0;
+        }
+      }
+      draw();
+    }
+
+    // ── Vacancy pool sizing ──
+    //
+    // Standing count of empty slots the churn spreads across. Scales
+    // with batch size so a freshly vacated slot only rarely refills
+    // immediately (chance ≈ batchSize / pool ≈ 25%), bounded below by
+    // 6% of the grid and above by 25% so it never looks sparse.
+
+    function targetHidden() {
+      var n = bottles.length;
+      if (!n) return 0;
+      return Math.min(Math.max(opts.batchSize * 4, Math.round(n * 0.06)), Math.round(n * 0.25));
+    }
+
+    // Re-randomize a bottle's look before it reappears, so a return —
+    // even to a previously used slot — reads as a brand-new bottle.
+
+    function rerollLook(b) {
+      b.flavorIdx = Math.floor(Math.random() * PALETTES.light.length);
+      b.baseScale = 1 + (Math.random() * 2 - 1) * opts.sizeVariation;
+      b.rad = (Math.random() * 2 - 1) * opts.rotationRange * Math.PI / 180;
     }
 
     // ── Animation: hide a bottle ──
 
     function hideBottle(b, delay) {
       b.hidden = true;
-      anime.animate(b.inner, {
+      anime.animate(b, {
         opacity: 0,
         scale: 0,
         duration: 600,
         delay: delay || 0,
         ease: 'in(3)',
+        onUpdate: requestRender,
       });
     }
 
@@ -228,19 +311,23 @@
 
     function showBottle(b, delay) {
       b.hidden = false;
-      anime.animate(b.inner, {
+      anime.animate(b, {
         opacity: [0, 1],
         scale: [0, 1],
         delay: delay || 0,
         ease: springEase,
+        onUpdate: requestRender,
       });
     }
 
     // ── Animation loop tick ──
     //
-    // Each tick: show hidden bottles (60% chance each), then
-    // hide batchSize random visible ones. Each bottle gets a
-    // random delay (0–400ms) so they don't all pop at once.
+    // Each tick: spring back enough random empty slots to hold the
+    // vacancy pool at its target, then hide batchSize random visible
+    // bottles. Removals and additions are both uniform-random and
+    // decoupled — a vacated slot sits in the pool and only refills by
+    // chance, not on the next tick. Each bottle gets a random delay
+    // (0–400ms) so they don't all pop at once.
 
     function tick() {
       if (destroyed || reducedMotion) return;
@@ -252,9 +339,14 @@
         else visible.push(bottles[i]);
       }
 
-      // Reappear phase: hidden bottles get 60% chance to spring back
-      for (var j = 0; j < hidden.length; j++) {
-        if (Math.random() < 0.6) showBottle(hidden[j], Math.random() * 400);
+      // Reappear phase: refill toward the vacancy target at random
+      // empty slots (this tick's hides aren't in the pool yet, so a
+      // bottle never bounces straight back)
+      shuffle(hidden);
+      var toShow = Math.min(hidden.length, Math.max(0, hidden.length + opts.batchSize - targetHidden()));
+      for (var j = 0; j < toShow; j++) {
+        rerollLook(hidden[j]);
+        showBottle(hidden[j], Math.random() * 400);
       }
 
       // Hide phase: pick batchSize random visible bottles
@@ -269,7 +361,7 @@
 
     function startLoop() {
       stopLoop();
-      if (!reducedMotion) {
+      if (!reducedMotion && !destroyed) {
         intervalId = setInterval(tick, opts.cycleInterval);
       }
     }
@@ -289,7 +381,8 @@
           var nowDark = document.documentElement.classList.contains('dark');
           if (nowDark !== isDark) {
             isDark = nowDark;
-            recolorBottles(bottles, isDark);
+            sprites = buildSprites(isDark, dpr);
+            draw();
           }
         }
       }
@@ -309,6 +402,26 @@
     }
     window.addEventListener('resize', onResize);
 
+    // ── Device-pixel-ratio watcher ──
+    //
+    // Sprites and the canvas backing store are sized for the current
+    // DPR. Moving the window to a display with a different DPR without
+    // a resize (same CSS size) would leave them blurry — rebuild.
+
+    function watchDpr() {
+      if (dprQuery) dprQuery.removeEventListener('change', onDprChange);
+      dprQuery = window.matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)');
+      dprQuery.addEventListener('change', onDprChange);
+    }
+
+    function onDprChange() {
+      if (destroyed) return;
+      buildBottles();
+      startLoop();
+      watchDpr();
+    }
+    watchDpr();
+
     // ── Reduced motion listener ──
 
     function onMotionChange(e) {
@@ -317,9 +430,10 @@
         stopLoop();
         for (var i = 0; i < bottles.length; i++) {
           bottles[i].hidden = false;
-          bottles[i].inner.style.opacity = '1';
-          bottles[i].inner.style.transform = 'scale(1)';
+          bottles[i].scale = 1;
+          bottles[i].opacity = 1;
         }
+        draw();
       } else {
         startLoop();
       }
@@ -344,14 +458,16 @@
 
     // ── Public API ──
 
-    return {
+    var api = {
       set: function(k, v) {
         opts[k] = v;
         if (k === 'spacing' || k === 'sizeVariation' || k === 'rotationRange' || k === 'randomness') {
           if (rebuildTimer) clearTimeout(rebuildTimer);
           rebuildTimer = setTimeout(function() {
-            buildBottles();
-            startLoop();
+            if (!destroyed) {
+              buildBottles();
+              startLoop();
+            }
           }, 80);
         } else if (k === 'cycleInterval') {
           startLoop();
@@ -359,6 +475,7 @@
       },
 
       regenerate: function() {
+        if (destroyed) return;
         buildBottles();
         startLoop();
       },
@@ -366,18 +483,26 @@
       destroy: function() {
         destroyed = true;
         stopLoop();
+        if (resizeTimer) clearTimeout(resizeTimer);
+        if (rebuildTimer) clearTimeout(rebuildTimer);
         darkObserver.disconnect();
         window.removeEventListener('resize', onResize);
         motionQuery.removeEventListener('change', onMotionChange);
+        if (dprQuery) dprQuery.removeEventListener('change', onDprChange);
         document.removeEventListener('visibilitychange', onVisibilityChange);
-        while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
         bottles = [];
+        if (canvasEl._soylentWallpaper === api) canvasEl._soylentWallpaper = null;
       },
 
       get bottleCount() {
         return bottles.length;
       },
     };
+
+    canvasEl._soylentWallpaper = api;
+    return api;
   }
 
   window.SoylentWallpaper = { init: init };

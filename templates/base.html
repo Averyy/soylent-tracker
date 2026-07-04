@@ -20,7 +20,7 @@
   <script src="/static/js/vendor/alpine-3.14.8.min.js?v={{ asset_hash('js/vendor/alpine-3.14.8.min.js') }}" defer></script>
 </head>
 <body>
-  <svg id="wallpaper" class="wallpaper-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  <canvas id="wallpaper" class="wallpaper-canvas" aria-hidden="true"></canvas>
   <main class="{% block wrapper_class %}page{% endblock %}">
     {% block content %}{% endblock %}
   </main>
@@ -41,7 +41,10 @@
   </footer>
 
   <!-- Wallpaper floating panel -->
-  <div id="wall-panel" class="wall-panel" x-data="wallPanel()" x-init="init()">
+  <!-- Alpine auto-calls the component's init() method; an explicit
+       x-init="init()" here would run it TWICE (two wallpaper engines
+       drawing to one canvas = flashing/layered backgrounds) -->
+  <div id="wall-panel" class="wall-panel" x-data="wallPanel()">
     <div class="wall-panel-header">
       <span class="wall-panel-title">Wallpaper</span>
       <button class="wall-panel-close" @click="close()" aria-label="Close wallpaper controls">
@@ -187,9 +190,9 @@
             this.batchSize = saved.batchSize;
           }
 
-          var svg = document.getElementById('wallpaper');
+          var canvas = document.getElementById('wallpaper');
           if (typeof SoylentWallpaper === 'undefined') return;
-          this._ctrl = SoylentWallpaper.init(svg, {
+          this._ctrl = SoylentWallpaper.init(canvas, {
             spacing: this.spacing,
             sizeVariation: this.sizeVariation / 100,
             rotationRange: this.rotationRange,

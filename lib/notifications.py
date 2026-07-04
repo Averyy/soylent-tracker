@@ -125,7 +125,10 @@ def send_sms(phone: str, message: str) -> bool:
         return False
 
 
+# TRACKER_URL: public buy page linked in bulk alerts.
+# MANAGE_URL: logged-in dashboard for managing subscriptions.
 TRACKER_URL = os.environ.get("TRACKER_URL", "https://soylent.dev/buy")
+MANAGE_URL = os.environ.get("MANAGE_URL", "https://soylent.dev/tracker")
 
 
 def _stock_suffix(qty: int | None) -> str:
@@ -143,7 +146,7 @@ def _footer(restocked: list[dict], unsub_keys: set[str]) -> str:
         if c["key"] in unsub_keys:
             return "You've been unsubscribed from this product."
         elif qty is not None and qty > 0:
-            return "Limited stock, we'll keep watching."
+            return f"Limited stock. Manage: {MANAGE_URL}"
         else:
             return "Unknown stock, we'll keep watching."
 
@@ -176,7 +179,7 @@ def format_notification(restocked: list[dict], unsub_keys: set[str] | None = Non
         qty = c.get("inventory_qty")
         suffix = _stock_suffix(qty)
         footer = _footer(restocked, unsub_keys)
-        return f"{name} is back in stock{suffix}:\n{url}\n\n{footer}"
+        return f"{name} in stock{suffix}:\n{url}\n\n{footer}"
 
     # Multiple products — one line per product
     lines = []

@@ -11,7 +11,7 @@ from lib.notifications import format_notification, notify_changes
 def test_single_product_notification():
     changes = [{"key": "shopify-ca:123", "title": "Test Product", "available": True}]
     msg = format_notification(changes)
-    assert "is back in stock" in msg
+    assert "Test Product in stock" in msg
     assert "soylent.ca/products/123" in msg
 
 
@@ -31,7 +31,7 @@ def test_single_product_stock_shown():
     changes = [{"key": "shopify-ca:1", "title": "Test", "available": True, "inventory_qty": 12}]
     msg = format_notification(changes, unsub_keys=set())
     assert "(12 available)" in msg
-    assert "is back in stock (12 available):" in msg
+    assert "Test in stock (12 available):" in msg
 
 
 def test_single_product_no_stock():
@@ -87,7 +87,7 @@ def test_watching_message_when_low_stock():
     """Single product with stock <= threshold shows watching message."""
     changes = [{"key": "shopify-ca:1", "title": "Test", "available": True, "inventory_qty": 50}]
     msg = format_notification(changes, unsub_keys=set())
-    assert "Limited stock, we'll keep watching." in msg
+    assert "Limited stock. Manage: https://soylent.dev/tracker" in msg
 
 
 def test_unknown_stock_watching_message():
